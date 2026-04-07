@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="fi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Varaustilanne - Sisäinen dashboard</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header class="header">
+        <div>
+          <h1>Puhelinvaraajien dashboard</h1>
+          <p class="subtitle">Tapahtumien varaustilanne reaaliajassa</p>
+        </div>
+        <button id="refreshButton" type="button">Päivitä nyt</button>
+      </header>
+
+      <section class="controls" aria-label="Hakutoiminnot">
+        <label for="searchInput">Hae paikkakuntaa tai tapahtumaa</label>
+        <input
+          id="searchInput"
+          type="search"
+          placeholder="Hae paikkakuntaa tai tapahtumaa..."
+          autocomplete="off"
+        />
+      </section>
+
+      <section class="status-row" aria-live="polite">
+        <p id="statusText">Ladataan tietoja...</p>
+        <p id="updatedText" class="updated"></p>
+      </section>
+
+      <section class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Otsikko</th>
+              <th>Sijainti</th>
+              <th>Päivämäärä</th>
+              <th>Varattu yhteensä</th>
+              <th>Testivaraukset</th>
+              <th>Oikeat varaukset</th>
+              <th>Vapaita paikkoja</th>
+            </tr>
+          </thead>
+          <tbody id="eventsBody"></tbody>
+        </table>
+      </section>
+    </main>
+
+    <div id="overlay" class="overlay hidden" aria-hidden="true"></div>
+    <aside id="eventDrawer" class="drawer hidden" aria-hidden="true">
+      <div class="drawer-header">
+        <h2 id="drawerTitle">Tapahtuman tiedot</h2>
+        <button id="closeDrawerButton" type="button" class="icon-button" aria-label="Sulje">
+          ✕
+        </button>
+      </div>
+
+      <section id="drawerMeta" class="drawer-meta"></section>
+
+      <section class="drawer-section">
+        <div class="section-header">
+          <h3>Merkinnät</h3>
+          <button id="addNoteButton" type="button">Lisää merkintä</button>
+        </div>
+
+        <form id="noteForm" class="note-form hidden">
+          <label for="callerInput">Soittaja</label>
+          <input id="callerInput" name="caller" type="text" required />
+
+          <label for="customerInput">Asiakas</label>
+          <input id="customerInput" name="customer" type="text" required />
+
+          <label for="commentInput">Kommentti</label>
+          <textarea id="commentInput" name="comment" rows="4" required></textarea>
+
+          <button id="saveNoteButton" type="submit">Tallenna merkintä</button>
+        </form>
+
+        <div id="notesList" class="notes-list"></div>
+      </section>
+    </aside>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
