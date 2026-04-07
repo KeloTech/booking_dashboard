@@ -22,6 +22,7 @@ alter table public.event_notes enable row level security;
 
 drop policy if exists "event_notes_select_anon" on public.event_notes;
 drop policy if exists "event_notes_insert_anon" on public.event_notes;
+drop policy if exists "event_notes_delete_anon" on public.event_notes;
 
 -- Sisäinen dashboard ilman kirjautumista: anon saa lukea ja lisätä.
 -- Tiukenna käytännöt (esim. vain kirjautuneet) kun käyttöoikeudet määritellään.
@@ -36,3 +37,9 @@ create policy "event_notes_insert_anon"
   for insert
   to anon
   with check (true);
+
+create policy "event_notes_delete_anon"
+  on public.event_notes
+  for delete
+  to anon
+  using (true);

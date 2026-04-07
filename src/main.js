@@ -4,6 +4,8 @@ const API_URL =
   "https://script.googleusercontent.com/macros/echo?user_content_key=AWDtjMXci3_5NkPy0FS_ddSHbzMfeKYyNEXAnA107MsKtOgkoFYt6sLwndImsrlpSIwstTsMfrIrjS7yc2OadtiuyCfIDMzbjaPvMv6Gc-H9n5smZeN0itJyD7X9PW4WkmqzTkz4DD7Yo_al2QJ3EwZ9X17lmYHDZnTmJioPlK0wo4-UnVnW15zBXIK7ubNmNNbJeV1jB3HiPMWH9dUbyLfCSnGEH1Zr5JfBUjUfjCxFBkSfrcgP-LSldLFKHiCCMBIqnqUhuGK5iNpDaHC1fzXhnCREj4ila6IOw5KBDpRt&lib=MfFvjvB14MTaUuGb9I0ppQ7vDcWBALqSa";
 
 const REFRESH_MS = 60000;
+const DASHBOARD_PIN = "3107";
+const PIN_SESSION_KEY = "dashboardPinUnlocked";
 
 /* Netlify / .env: SUPABASE_URL, SUPABASE_ANON_KEY (vite.config: envPrefix SUPABASE_) */
 const supabaseUrl = import.meta.env.SUPABASE_URL ?? "";
@@ -20,17 +22,28 @@ const closeDrawerButton = document.getElementById("closeDrawerButton");
 const drawerTitle = document.getElementById("drawerTitle");
 const drawerMeta = document.getElementById("drawerMeta");
 const addNoteButton = document.getElementById("addNoteButton");
+const notesTitle = document.getElementById("notesTitle");
 const noteForm = document.getElementById("noteForm");
 const callerInput = document.getElementById("callerInput");
 const customerInput = document.getElementById("customerInput");
 const commentInput = document.getElementById("commentInput");
 const saveNoteButton = document.getElementById("saveNoteButton");
 const notesList = document.getElementById("notesList");
+const historyList = document.getElementById("historyList");
+const historyStatus = document.getElementById("historyStatus");
+const pinGate = document.getElementById("pinGate");
+const pinForm = document.getElementById("pinForm");
+const pinInput = document.getElementById("pinInput");
+const pinError = document.getElementById("pinError");
+const pinSubmitButton = document.getElementById("pinSubmitButton");
 
 let allEvents = [];
 let generatedAt = null;
 let selectedEvent = null;
 let supabaseClient = null;
+let notesByEventKey = new Map();
+let noteCountsByEventKey = new Map();
+let appStarted = false;
 
 function isSupabaseConfigured() {
   return Boolean(supabaseUrl && supabaseAnonKey);
@@ -84,6 +97,21 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+function groupNotesByEventKey(notes) {
+  const grouped = new Map();
+  const counts = new Map();
+  notes.forEach((note) => {
+    const key = note.event_key;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(note);
+  });
+  grouped.forEach((items) =>
+    items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  );
+  return { grouped, counts };
+}
+
 function updateNotesFormAvailability() {
   const ok = isSupabaseConfigured();
   addNoteButton.disabled = !ok;
@@ -94,6 +122,7 @@ function updateNotesFormAvailability() {
 }
 
 function renderNoteCards(rows) {
+  notesTitle.textContent = `Merkinnät (${rows.length})`;
   if (rows.length === 0) {
     notesList.innerHTML =
       '<div class="empty-notes">Ei vielä merkintöjä. Lisää ensimmäinen merkintä tästä tapahtumasta.</div>';
@@ -110,10 +139,116 @@ function renderNoteCards(rows) {
           </div>
           <p class="note-customer">Asiakas: ${escapeHtml(row.asiakas)}</p>
           <p class="note-comment">${escapeHtml(row.kommentti)}</p>
+          <div class="note-actions">
+            <button type="button" class="danger-button delete-note-button" data-note-id="${row.id}">
+              Poista merkintä
+            </button>
+          </div>
         </article>
       `;
     })
     .join("");
+
+  notesList.querySelectorAll(".delete-note-button").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const noteId = button.getAttribute("data-note-id");
+      if (!noteId || !selectedEvent) return;
+      const confirmed = window.confirm(
+        "Haluatko varmasti poistaa tämän merkinnän?"
+      );
+      if (!confirmed) return;
+      await deleteNote(noteId, selectedEvent);
+    });
+  });
+}
+
+function renderHistory() {
+  if (!isSupabaseConfigured()) {
+    historyStatus.textContent = "Historia näkyy, kun Supabase on käytössä.";
+    historyList.innerHTML =
+      '<div class="empty-notes">Aseta SUPABASE_URL ja SUPABASE_ANON_KEY nähdäksesi historian.</div>';
+    return;
+  }
+
+  const now = Date.now();
+  const historyEntries = [];
+
+  notesByEventKey.forEach((notes, key) => {
+    const first = notes[0];
+    if (!first) return;
+    const startDateValue = new Date(first.start_date).getTime();
+    if (Number.isNaN(startDateValue) || startDateValue >= now) return;
+    historyEntries.push({
+      key,
+      location: first.location,
+      start_date: first.start_date,
+      notes,
+      count: notes.length,
+    });
+  });
+
+  historyEntries.sort(
+    (a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
+  );
+
+  historyStatus.textContent = `${historyEntries.length} tapahtumaa historiassa`;
+  if (historyEntries.length === 0) {
+    historyList.innerHTML =
+      '<div class="empty-notes">Ei vielä historiallisia merkintöjä.</div>';
+    return;
+  }
+
+  historyList.innerHTML = historyEntries
+    .slice(0, 10)
+    .map((entry) => {
+      const latestComment = entry.notes[0];
+      return `
+      <article class="history-item">
+        <div class="history-top">
+          <h3 class="history-title">
+            ${escapeHtml(entry.location)}
+            <span class="count-badge">${entry.count}</span>
+          </h3>
+          <span class="history-date">${formatDateOnly(entry.start_date)}</span>
+        </div>
+        <p class="history-comment">
+          Viimeisin: ${escapeHtml(latestComment.soittaja)} - ${escapeHtml(
+        latestComment.kommentti
+      )}
+        </p>
+      </article>
+    `;
+    })
+    .join("");
+}
+
+async function refreshAllNotesData() {
+  const client = getSupabase();
+  if (!client) {
+    notesByEventKey = new Map();
+    noteCountsByEventKey = new Map();
+    renderHistory();
+    return;
+  }
+
+  const { data, error } = await client
+    .from("event_notes")
+    .select(
+      "id, event_key, location, start_date, soittaja, asiakas, kommentti, created_at"
+    )
+    .order("created_at", { ascending: false })
+    .limit(2000);
+
+  if (error) {
+    historyStatus.textContent = `Historian lataus epäonnistui: ${error.message}`;
+    historyList.innerHTML = '<div class="empty-notes">Historiaa ei voitu ladata.</div>';
+    return;
+  }
+
+  const { grouped, counts } = groupNotesByEventKey(data ?? []);
+  notesByEventKey = grouped;
+  noteCountsByEventKey = counts;
+  renderHistory();
 }
 
 async function loadNotesForEvent(event) {
@@ -124,21 +259,27 @@ async function loadNotesForEvent(event) {
     return;
   }
 
-  notesList.innerHTML =
-    '<div class="empty-notes">Ladataan merkintöjä...</div>';
+  notesList.innerHTML = '<div class="empty-notes">Ladataan merkintöjä...</div>';
+  await refreshAllNotesData();
+  renderNoteCards(notesByEventKey.get(eventKey(event)) ?? []);
+}
 
-  const { data, error } = await client
-    .from("event_notes")
-    .select("id, soittaja, asiakas, kommentti, created_at")
-    .eq("event_key", eventKey(event))
-    .order("created_at", { ascending: false });
+async function deleteNote(noteId, event) {
+  const client = getSupabase();
+  if (!client) return;
 
+  const { error } = await client.from("event_notes").delete().eq("id", noteId);
   if (error) {
-    notesList.innerHTML = `<div class="empty-notes">Merkintöjen lataus epäonnistui: ${escapeHtml(error.message)}</div>`;
+    alert(`Poisto epäonnistui: ${error.message}`);
     return;
   }
-
-  renderNoteCards(data ?? []);
+  await refreshAllNotesData();
+  renderTable();
+  if (selectedEvent) {
+    renderNoteCards(notesByEventKey.get(eventKey(selectedEvent)) ?? []);
+  } else if (event) {
+    renderNoteCards(notesByEventKey.get(eventKey(event)) ?? []);
+  }
 }
 
 function renderDrawer(event) {
@@ -202,9 +343,10 @@ function renderTable() {
 
   const rows = filtered
     .map((event, index) => {
+      const noteCount = noteCountsByEventKey.get(eventKey(event)) ?? 0;
       return `
       <tr class="clickable-row" data-event-index="${index}" title="Avaa tapahtuman tiedot">
-        <td>${escapeHtml(event.title)}</td>
+        <td>${escapeHtml(event.title)} <span class="count-badge">${noteCount}</span></td>
         <td>${escapeHtml(event.location)}</td>
         <td>${formatDateOnly(event.startDate)}</td>
         <td>${event.bookedTotal}</td>
@@ -229,6 +371,7 @@ function renderTable() {
 }
 
 async function loadData() {
+  if (!appStarted) return;
   statusText.textContent = "Päivitetään tietoja...";
 
   try {
@@ -247,6 +390,7 @@ async function loadData() {
       (a, b) => new Date(a.startDate) - new Date(b.startDate)
     );
 
+    await refreshAllNotesData();
     renderTable();
     updatedText.textContent = `Lähde päivitetty: ${formatDateTime(generatedAt)}`;
 
@@ -275,7 +419,10 @@ async function loadData() {
 }
 
 searchInput.addEventListener("input", renderTable);
-refreshButton.addEventListener("click", loadData);
+refreshButton.addEventListener("click", () => {
+  if (!appStarted) return;
+  void loadData();
+});
 overlay.addEventListener("click", closeDrawer);
 closeDrawerButton.addEventListener("click", closeDrawer);
 addNoteButton.addEventListener("click", () => {
@@ -316,6 +463,8 @@ noteForm.addEventListener("submit", async (event) => {
 
   noteForm.reset();
   noteForm.classList.add("hidden");
+  await refreshAllNotesData();
+  renderTable();
   await loadNotesForEvent(selectedEvent);
 });
 
@@ -326,5 +475,70 @@ document.addEventListener("keydown", (event) => {
 });
 
 updateNotesFormAvailability();
-loadData();
-setInterval(loadData, REFRESH_MS);
+
+function startDashboard() {
+  if (appStarted) return;
+  appStarted = true;
+  sessionStorage.setItem(PIN_SESSION_KEY, "1");
+  document.body.classList.remove("pin-locked");
+  if (pinGate) pinGate.classList.add("hidden");
+  void loadData();
+  setInterval(loadData, REFRESH_MS);
+}
+
+function tryUnlockWithPin() {
+  if (!pinInput || !pinError) return;
+  const entered = pinInput.value.replace(/\D/g, "").trim();
+  if (entered.length !== 4) {
+    pinError.textContent = "PIN-koodin pitää olla 4 numeroa.";
+    pinError.classList.remove("hidden");
+    return;
+  }
+  if (entered === DASHBOARD_PIN) {
+    pinError.classList.add("hidden");
+    startDashboard();
+  } else {
+    pinError.textContent = "Virheellinen PIN-koodi.";
+    pinError.classList.remove("hidden");
+    pinInput.value = "";
+    pinInput.focus();
+  }
+}
+
+if (pinForm) {
+  pinForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    tryUnlockWithPin();
+  });
+}
+
+if (pinSubmitButton) {
+  pinSubmitButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    tryUnlockWithPin();
+  });
+}
+
+if (pinInput) {
+  pinInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      tryUnlockWithPin();
+    }
+  });
+
+  pinInput.addEventListener("input", () => {
+    pinInput.value = pinInput.value.replace(/\D/g, "").slice(0, 4);
+    if (pinError) pinError.classList.add("hidden");
+  });
+}
+
+const pinUiAvailable = Boolean(pinGate && pinForm && pinInput && pinError);
+if (!pinUiAvailable) {
+  // Dev/hot-reload fallback: avoid lock if HTML and JS are momentarily mismatched.
+  startDashboard();
+} else if (sessionStorage.getItem(PIN_SESSION_KEY) === "1") {
+  startDashboard();
+} else if (pinInput) {
+  pinInput.focus();
+}

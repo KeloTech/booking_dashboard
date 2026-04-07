@@ -22,6 +22,66 @@ body {
   color: var(--text);
 }
 
+.pin-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(15, 23, 42, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.pin-card {
+  width: min(420px, 100%);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  padding: 1rem;
+}
+
+.pin-card h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.pin-help {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+}
+
+.pin-form {
+  margin-top: 0.9rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.pin-form label {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.pin-form input {
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  padding: 0.65rem 0.75rem;
+  font-size: 1.1rem;
+  letter-spacing: 0.2rem;
+  text-align: center;
+}
+
+.pin-error {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 0.9rem;
+}
+
+.pin-locked .container,
+.pin-locked #overlay,
+.pin-locked #eventDrawer {
+  visibility: hidden;
+}
+
 .container {
   max-width: 1200px;
   margin: 0 auto;
@@ -111,6 +171,80 @@ button:disabled:hover {
 
 .status-row p {
   margin: 0;
+}
+
+.history-wrap {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  padding: 0.85rem;
+  margin-bottom: 0.8rem;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.history-header h2 {
+  margin: 0;
+  font-size: 1.08rem;
+}
+
+.history-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.history-list {
+  margin-top: 0.7rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.history-item {
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  padding: 0.65rem;
+  background: #fcfdff;
+}
+
+.history-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.history-title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.count-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  background: #e2e8f0;
+  color: #334155;
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.history-date {
+  color: var(--muted);
+  font-size: 0.86rem;
+  white-space: nowrap;
+}
+
+.history-comment {
+  margin: 0.45rem 0 0;
+  color: #334155;
+  font-size: 0.9rem;
 }
 
 .table-wrap {
@@ -344,6 +478,23 @@ tbody tr:hover {
   white-space: pre-wrap;
 }
 
+.note-actions {
+  margin-top: 0.55rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.danger-button {
+  border-color: #fecaca;
+  color: #991b1b;
+  background: #fff5f5;
+}
+
+.danger-button:hover {
+  border-color: #fca5a5;
+  color: #7f1d1d;
+}
+
 .empty-notes {
   border: 1px dashed var(--line);
   border-radius: 0.75rem;
@@ -375,5 +526,10 @@ tbody tr:hover {
   .section-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .history-top {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

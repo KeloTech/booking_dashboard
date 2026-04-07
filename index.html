@@ -6,7 +6,27 @@
     <title>Varaustilanne - Sisäinen dashboard</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
-  <body>
+  <body class="pin-locked">
+    <div id="pinGate" class="pin-gate" aria-modal="true" role="dialog" aria-labelledby="pinTitle">
+      <div class="pin-card">
+        <h2 id="pinTitle">Anna PIN-koodi</h2>
+        <p class="pin-help">Syötä 4-numeroinen koodi jatkaaksesi.</p>
+        <form id="pinForm" class="pin-form" novalidate>
+          <label for="pinInput">PIN</label>
+          <input
+            id="pinInput"
+            type="password"
+            inputmode="numeric"
+            maxlength="4"
+            autocomplete="off"
+            required
+          />
+          <p id="pinError" class="pin-error hidden">Virheellinen PIN-koodi.</p>
+          <button id="pinSubmitButton" type="submit">Avaa dashboard</button>
+        </form>
+      </div>
+    </div>
+
     <main class="container">
       <header class="header">
         <div>
@@ -17,7 +37,6 @@
       </header>
 
       <section class="controls" aria-label="Hakutoiminnot">
-        <label for="searchInput">Hae paikkakuntaa tai tapahtumaa</label>
         <input
           id="searchInput"
           type="search"
@@ -29,6 +48,14 @@
       <section class="status-row" aria-live="polite">
         <p id="statusText">Ladataan tietoja...</p>
         <p id="updatedText" class="updated"></p>
+      </section>
+
+      <section class="history-wrap" aria-live="polite">
+        <div class="history-header">
+          <h2>Historia</h2>
+          <p id="historyStatus" class="history-status">Ladataan historiaa...</p>
+        </div>
+        <div id="historyList" class="history-list"></div>
       </section>
 
       <section class="table-wrap">
@@ -62,7 +89,7 @@
 
       <section class="drawer-section">
         <div class="section-header">
-          <h3>Merkinnät</h3>
+          <h3 id="notesTitle">Merkinnät</h3>
           <button id="addNoteButton" type="button">Lisää merkintä</button>
         </div>
 
