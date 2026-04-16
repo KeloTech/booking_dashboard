@@ -8,8 +8,8 @@ const DASHBOARD_PIN = "3107";
 const PIN_SESSION_KEY = "dashboardPinUnlocked";
 const TODAY_TARGET = 12;
 const WEEKDAY_TARGET = 12;
-const CHART_START_HOUR = 8;
-const CHART_END_HOUR = 18;
+const CHART_START_HOUR = 7;
+const CHART_END_HOUR = 23;
 const HOME_VISITS_STORAGE_KEY = "localHomeVisits";
 const BOOKINGS_STORAGE_KEY = "localBookings";
 
@@ -53,6 +53,7 @@ const hvCustomerName = document.getElementById("hvCustomerName");
 const hvNickname = document.getElementById("hvNickname");
 const hvPhone = document.getElementById("hvPhone");
 const hvAddress = document.getElementById("hvAddress");
+const hvVisitDate = document.getElementById("hvVisitDate");
 const hvVisitTime = document.getElementById("hvVisitTime");
 const hvDetails = document.getElementById("hvDetails");
 const saveHomeVisitButton = document.getElementById("saveHomeVisitButton");
@@ -64,7 +65,6 @@ const toggleBookingFormButton = document.getElementById("toggleBookingFormButton
 const bookingForm = document.getElementById("bookingForm");
 const bookingCustomerName = document.getElementById("bookingCustomerName");
 const bookingPhone = document.getElementById("bookingPhone");
-const bookingType = document.getElementById("bookingType");
 const bookingDate = document.getElementById("bookingDate");
 const bookingTime = document.getElementById("bookingTime");
 const bookingEventSelect = document.getElementById("bookingEventSelect");
@@ -81,6 +81,8 @@ const chartLine = document.getElementById("chartLine");
 const chartDots = document.getElementById("chartDots");
 const chartTargetLine = document.getElementById("chartTargetLine");
 const chartTargetLabel = document.getElementById("chartTargetLabel");
+const chartXAxisLabels = document.getElementById("chartXAxisLabels");
+const chartYAxisLabels = document.getElementById("chartYAxisLabels");
 const streakValue = document.getElementById("streakValue");
 const streakLabel = document.getElementById("streakLabel");
 const weekBestValue = document.getElementById("weekBestValue");
@@ -111,6 +113,7 @@ let notesByEventKey = new Map();
 let noteCountsByEventKey = new Map();
 let appStarted = false;
 let homeVisits = [];
+let editingHomeVisitId = null;
 let activeView = "dashboard";
 let calendarMode = "all";
 let calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
@@ -196,6 +199,27 @@ function getDayCountMap(bookingsList) {
     map.set(key, (map.get(key) ?? 0) + 1);
   });
   return map;
+}
+
+function getCreatedDayCountMap(bookingsList) {
+  const map = new Map();
+  bookingsList.forEach((entry) => {
+    const createdAt = new Date(entry.created_at || entry.booking_date);
+    if (Number.isNaN(createdAt.getTime())) return;
+    const key = formatIsoDateKey(createdAt);
+    map.set(key, (map.get(key) ?? 0) + 1);
+  });
+  return map;
+}
+
+function isConfirmedBooking(entry) {
+  const status = String(entry.status || "").toLowerCase();
+  return status === "vahvistettu";
+}
+
+function isEventBooking(entry) {
+  const type = String(entry.booking_type || "").toLowerCase();
+  return type === "tapahtumavaraus" || Boolean(entry.event_key);
 }
 
 function getCurrentStreak(dayCountMap) {
@@ -302,40 +326,56 @@ function getStatusLabel(status) {
   return "Odottaa";
 }
 
-function buildBookingTimeOptions() {
-  if (!bookingTime) return;
+function getEventLocationLabel(entry) {
+  const raw = String(entry.event_name || "").trim();
+  if (!raw) return "Ei tapahtumaa";
+  if (raw.includes(" - ")) return raw.split(" - ").at(-1)?.trim() || raw;
+  return raw;
+}
+
+function populateTimeOptions(selectElement) {
+  if (!selectElement) return;
   const options = ['<option value="">Valitse aika</option>'];
   for (let hour = 5; hour <= 23; hour += 1) {
     const hh = String(hour).padStart(2, "0");
     options.push(`<option value="${hh}:00">${hh}:00</option>`);
-    if (hour !== 23) {
-      options.push(`<option value="${hh}:30">${hh}:30</option>`);
-    }
+    options.push(`<option value="${hh}:15">${hh}:15</option>`);
+    options.push(`<option value="${hh}:30">${hh}:30</option>`);
+    options.push(`<option value="${hh}:45">${hh}:45</option>`);
   }
-  bookingTime.innerHTML = options.join("");
+  selectElement.innerHTML = options.join("");
+}
+
+function buildBookingTimeOptions() {
+  populateTimeOptions(bookingTime);
+}
+
+function buildHomeVisitTimeOptions() {
+  populateTimeOptions(hvVisitTime);
 }
 
 function renderBookings() {
   if (!bookingsBody) return;
   const query = bookingSearchInput?.value.trim().toLowerCase() ?? "";
   const filtered = bookings
+    .filter(isEventBooking)
     .filter((entry) => {
       const haystack =
         `${entry.customer_name} ${entry.phone ?? ""} ${entry.booking_type ?? ""} ${entry.owner ?? ""} ${entry.event_name ?? ""}`.toLowerCase();
       return haystack.includes(query);
     })
     .sort((a, b) => {
-      const aDate = new Date(`${a.booking_date}T${a.booking_time || "00:00"}:00`);
-      const bDate = new Date(`${b.booking_date}T${b.booking_time || "00:00"}:00`);
-      return aDate - bDate;
+      const aCreated = new Date(a.created_at || `${a.booking_date}T${a.booking_time || "00:00"}:00`);
+      const bCreated = new Date(b.created_at || `${b.booking_date}T${b.booking_time || "00:00"}:00`);
+      return bCreated - aCreated;
     });
 
   if (bookingsSubtitle) {
-    bookingsSubtitle.textContent = `Hallinnoi ja merkitse omat varauksesi. Sinulla on ${filtered.length} merkintää.`;
+    bookingsSubtitle.textContent = `Hallinnoi ja merkitse tapahtumavarauksia. Sinulla on ${filtered.length} merkintää.`;
   }
 
   if (filtered.length === 0) {
-    bookingsBody.innerHTML = '<tr><td colspan="9">Ei varauksia näytettäväksi.</td></tr>';
+    bookingsBody.innerHTML = '<tr><td colspan="7">Ei varauksia näytettäväksi.</td></tr>';
     return;
   }
 
@@ -344,13 +384,17 @@ function renderBookings() {
       const statusClass = `status-${entry.status || "odottaa"}`;
       const ownerText = entry.owner?.trim() || "-";
       const ownerClass = entry.owner?.trim() ? "" : "empty";
+      const locationLabel = getEventLocationLabel(entry);
+      const eventMeta = `${formatDateOnly(entry.booking_date)} klo ${entry.booking_time || "--:--"}`;
+      const createdAtLabel = entry.created_at ? formatDateTime(entry.created_at) : "-";
       return `
         <tr>
           <td>${escapeHtml(entry.customer_name)}</td>
-          <td>${formatDateOnly(entry.booking_date)}</td>
-          <td>${escapeHtml(entry.event_name || "-")}</td>
-          <td>${escapeHtml(entry.booking_type || "-")}</td>
-          <td>${escapeHtml(entry.booking_time || "-")}</td>
+          <td>
+            <div class="event-cell-main">${escapeHtml(locationLabel)}</div>
+            <div class="event-cell-meta">${escapeHtml(eventMeta)}</div>
+          </td>
+          <td>${escapeHtml(createdAtLabel)}</td>
           <td>${escapeHtml(entry.phone || "-")}</td>
           <td><span class="status-pill ${statusClass}">${getStatusLabel(entry.status)}</span></td>
           <td><span class="name-chip ${ownerClass}" title="${escapeHtml(
@@ -380,6 +424,7 @@ async function loadBookings() {
     renderBookings();
     renderOverviewStats(bookings);
     renderCalendar();
+    renderHistory();
     return;
   }
 
@@ -396,12 +441,14 @@ async function loadBookings() {
     renderBookings();
     renderOverviewStats(bookings);
     renderCalendar();
+    renderHistory();
     return;
   }
   bookings = data ?? [];
   renderBookings();
   renderOverviewStats(bookings);
   renderCalendar();
+  renderHistory();
 }
 
 async function saveBooking(entry) {
@@ -416,6 +463,7 @@ async function saveBooking(entry) {
     renderBookings();
     renderOverviewStats(bookings);
     renderCalendar();
+    renderHistory();
     return { ok: true };
   }
   const { error } = await client.from("bookings").insert(entry);
@@ -432,6 +480,7 @@ async function updateBooking(id, entry) {
     renderBookings();
     renderOverviewStats(bookings);
     renderCalendar();
+    renderHistory();
     return { ok: true };
   }
   const { error } = await client.from("bookings").update(entry).eq("id", id);
@@ -448,6 +497,7 @@ async function deleteBooking(id) {
     renderBookings();
     renderOverviewStats(bookings);
     renderCalendar();
+    renderHistory();
     return { ok: true };
   }
   const { error } = await client.from("bookings").delete().eq("id", id);
@@ -469,7 +519,6 @@ function startBookingEdit(entry) {
   bookingForm.classList.remove("hidden");
   bookingCustomerName.value = entry.customer_name || "";
   if (bookingPhone) bookingPhone.value = entry.phone || "";
-  if (bookingType) bookingType.value = entry.booking_type || "Kulta-arviointi";
   bookingDate.value = entry.booking_date || "";
   buildBookingTimeOptions();
   bookingTime.value = entry.booking_time || "";
@@ -526,6 +575,56 @@ async function saveHomeVisit(entry) {
   return { ok: true };
 }
 
+async function updateHomeVisit(id, entry) {
+  const client = getSupabase();
+  if (!client) {
+    homeVisits = homeVisits.map((visit) => (visit.id === id ? { ...visit, ...entry } : visit));
+    setLocalHomeVisits(homeVisits);
+    renderCalendar();
+    renderHomeVisits();
+    return { ok: true };
+  }
+  const { error } = await client.from("home_visits").update(entry).eq("id", id);
+  if (error) return { ok: false, message: error.message };
+  await loadHomeVisits();
+  return { ok: true };
+}
+
+function resetHomeVisitFormState() {
+  editingHomeVisitId = null;
+  if (saveHomeVisitButton) saveHomeVisitButton.textContent = "Tallenna kotikäynti";
+  if (toggleHomeVisitFormButton) toggleHomeVisitFormButton.textContent = "+ Uusi kotikäynti";
+}
+
+function startHomeVisitEdit(item) {
+  if (!homeVisitForm || !hvCustomerName || !hvAddress || !hvVisitDate || !hvVisitTime || !hvDetails) {
+    return;
+  }
+  editingHomeVisitId = item.id;
+  homeVisitForm.classList.remove("hidden");
+  hvCustomerName.value = item.customer_name || "";
+  if (hvNickname) hvNickname.value = item.nickname || "";
+  if (hvPhone) hvPhone.value = item.phone || "";
+  hvAddress.value = item.address || "";
+  const dateObj = new Date(item.visit_time);
+  if (!Number.isNaN(dateObj.getTime())) {
+    const yyyy = dateObj.getFullYear();
+    const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
+    const dd = String(dateObj.getDate()).padStart(2, "0");
+    hvVisitDate.value = `${yyyy}-${mm}-${dd}`;
+    const hh = String(dateObj.getHours()).padStart(2, "0");
+    const min = String(dateObj.getMinutes()).padStart(2, "0");
+    hvVisitTime.value = `${hh}:${min}`;
+  } else {
+    hvVisitDate.value = "";
+    hvVisitTime.value = "";
+  }
+  hvDetails.value = item.details || "";
+  if (saveHomeVisitButton) saveHomeVisitButton.textContent = "Tallenna muutokset";
+  if (toggleHomeVisitFormButton) toggleHomeVisitFormButton.textContent = "Peruuta muokkaus";
+  hvCustomerName.focus();
+}
+
 async function updateHomeVisitStatus(id, status) {
   const client = getSupabase();
   if (!client) {
@@ -548,10 +647,13 @@ function renderHomeVisitItems(items, container) {
     .map((item) => {
       const status = item.status || "sovittu";
       const nicknameText = item.nickname?.trim();
+      const timeLabel = formatDateTime(item.visit_time);
+      const phoneLabel = item.phone?.trim() ? item.phone : "-";
       return `
         <article class="home-visit-item">
-          <div class="home-visit-top">
-            <h4 class="home-visit-title">
+          <div class="home-visit-head">
+            <div>
+              <h4 class="home-visit-title">
               ${escapeHtml(item.customer_name)}
               ${
                 nicknameText
@@ -560,20 +662,38 @@ function renderHomeVisitItems(items, container) {
                     )}</span>`
                   : ""
               }
-            </h4>
-            <select class="home-visit-select" data-home-visit-status-id="${item.id}">
-              <option value="sovittu" ${status === "sovittu" ? "selected" : ""}>Sovittu</option>
-              <option value="valmis" ${status === "valmis" ? "selected" : ""}>Valmis</option>
-            </select>
+              </h4>
+              <p class="home-visit-meta-line">
+                <span><strong>Aika:</strong> ${escapeHtml(timeLabel)}</span>
+                <span><strong>Osoite:</strong> ${escapeHtml(item.address)}</span>
+                <span><strong>Puhelin:</strong> ${escapeHtml(phoneLabel)}</span>
+              </p>
+              <p class="home-visit-note">${escapeHtml(item.details)}</p>
+            </div>
+            <div class="home-visit-actions">
+              <button type="button" class="table-edit-button" data-home-visit-edit-id="${item.id}">
+                Muokkaa
+              </button>
+              <select class="home-visit-select home-visit-status-select" data-home-visit-status-id="${item.id}">
+                <option value="sovittu" ${status === "sovittu" ? "selected" : ""}>Sovittu</option>
+                <option value="valmis" ${status === "valmis" ? "selected" : ""}>Valmis</option>
+              </select>
+            </div>
           </div>
-          <p class="home-visit-meta">${formatDateTime(item.visit_time)} | ${escapeHtml(
-        item.address
-      )}${item.phone ? ` | ${escapeHtml(item.phone)}` : ""}</p>
-          <p class="home-visit-note">${escapeHtml(item.details)}</p>
         </article>
       `;
     })
     .join("");
+
+  container.querySelectorAll("[data-home-visit-edit-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.getAttribute("data-home-visit-edit-id");
+      if (!id) return;
+      const item = homeVisits.find((visit) => visit.id === id);
+      if (!item) return;
+      startHomeVisitEdit(item);
+    });
+  });
 
   container.querySelectorAll("[data-home-visit-status-id]").forEach((select) => {
     select.addEventListener("change", async () => {
@@ -593,21 +713,21 @@ function renderHomeVisits() {
   const todayItems = homeVisits.filter((item) => {
     const visitTime = new Date(item.visit_time);
     return visitTime >= today && visitTime < tomorrow;
-  });
+  }).sort((a, b) => new Date(a.visit_time) - new Date(b.visit_time));
   const pastItems = homeVisits
     .filter((item) => new Date(item.visit_time) < today)
     .sort((a, b) => new Date(b.visit_time) - new Date(a.visit_time));
   const futureItems = homeVisits
     .filter((item) => new Date(item.visit_time) >= tomorrow)
     .sort((a, b) => new Date(a.visit_time) - new Date(b.visit_time));
+  renderHomeVisitItems(futureItems, futureHomeVisitsList);
   renderHomeVisitItems(todayItems, todayHomeVisitsList);
   renderHomeVisitItems(pastItems, pastHomeVisitsList);
-  renderHomeVisitItems(futureItems, futureHomeVisitsList);
 }
 
 function getCalendarDailyCountMaps() {
   const bookingMap = new Map();
-  bookings.forEach((entry) => {
+  bookings.filter(isEventBooking).forEach((entry) => {
     if (!entry.booking_date) return;
     const date = new Date(`${entry.booking_date}T00:00:00`);
     if (Number.isNaN(date.getTime())) return;
@@ -657,16 +777,25 @@ function renderCalendar() {
   calendarGrid.innerHTML = cells.join("");
 }
 
-function drawTodayChart(hourlyCounts, target) {
-  if (!chartLine || !chartDots || !chartTargetLine || !chartTargetLabel) return;
+function drawTodayChart(hourlyCounts, target, yAxisMax) {
+  if (
+    !chartLine ||
+    !chartDots ||
+    !chartTargetLine ||
+    !chartTargetLabel ||
+    !chartXAxisLabels ||
+    !chartYAxisLabels
+  ) {
+    return;
+  }
   const width = 680;
   const height = 220;
-  const left = 12;
+  const left = 42;
   const right = width - 12;
-  const bottom = height - 10;
+  const bottom = height - 28;
   const top = 18;
   const steps = hourlyCounts.length - 1;
-  const maxValue = Math.max(target, ...hourlyCounts, 1);
+  const maxValue = Math.max(yAxisMax, target, ...hourlyCounts, 1);
   const points = hourlyCounts.map((count, index) => {
     const x = left + ((right - left) * index) / Math.max(steps, 1);
     const y = bottom - ((bottom - top) * count) / maxValue;
@@ -689,6 +818,22 @@ function drawTodayChart(hourlyCounts, target) {
   chartTargetLine.setAttribute("y2", targetY.toFixed(1));
   chartTargetLabel.setAttribute("x", String(right - 45));
   chartTargetLabel.setAttribute("y", String(Math.max(targetY - 8, 12)));
+
+  const xLabels = [];
+  for (let hour = CHART_START_HOUR; hour <= CHART_END_HOUR; hour += 1) {
+    const index = hour - CHART_START_HOUR;
+    const x = left + ((right - left) * index) / Math.max(steps, 1);
+    xLabels.push(`<text x="${x.toFixed(1)}" y="${height - 8}">${hour}:00</text>`);
+  }
+  chartXAxisLabels.innerHTML = xLabels.join("");
+
+  const yLabels = [];
+  const yStep = yAxisMax <= 15 ? 1 : 2;
+  for (let value = 0; value <= yAxisMax; value += yStep) {
+    const y = bottom - ((bottom - top) * value) / yAxisMax;
+    yLabels.push(`<text x="${left - 6}" y="${(y + 3).toFixed(1)}">${value}</text>`);
+  }
+  chartYAxisLabels.innerHTML = yLabels.join("");
 }
 
 function renderOverviewStats(bookingsList) {
@@ -698,7 +843,10 @@ function renderOverviewStats(bookingsList) {
   const tomorrow = new Date(todayStart);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
-  const todayBookings = bookingsList.filter((entry) => {
+  const confirmedBookings = bookingsList
+    .filter(isEventBooking)
+    .filter(isConfirmedBooking);
+  const todayBookings = confirmedBookings.filter((entry) => {
     const dateTime = getBookingDateTime(entry);
     return dateTime >= todayStart && dateTime < tomorrow;
   });
@@ -731,9 +879,10 @@ function renderOverviewStats(bookingsList) {
     sum += value;
     cumulative.push(sum);
   });
-  drawTodayChart(cumulative, TODAY_TARGET);
+  const yAxisMax = todayCount >= TODAY_TARGET ? 30 : 15;
+  drawTodayChart(cumulative, TODAY_TARGET, yAxisMax);
 
-  const dayCountMap = getDayCountMap(bookingsList);
+  const dayCountMap = getCreatedDayCountMap(confirmedBookings);
   if (streakValue && streakLabel) {
     const streak = getCurrentStreak(dayCountMap);
     streakValue.textContent = String(streak);
@@ -866,58 +1015,31 @@ function renderNoteCards(rows) {
 }
 
 function renderHistory() {
-  if (!isSupabaseConfigured()) {
-    historyStatus.textContent = "Historia näkyy, kun Supabase on käytössä.";
-    historyList.innerHTML =
-      '<div class="empty-notes">Aseta SUPABASE_URL ja SUPABASE_ANON_KEY nähdäksesi historian.</div>';
+  const eventBookings = bookings.filter(isEventBooking);
+  historyStatus.textContent = `${eventBookings.length} tapahtumavarausta historiassa`;
+  if (eventBookings.length === 0) {
+    historyList.innerHTML = '<div class="empty-notes">Ei vielä tapahtumavarauksia.</div>';
     return;
   }
-
-  const now = Date.now();
-  const historyEntries = [];
-
-  notesByEventKey.forEach((notes, key) => {
-    const first = notes[0];
-    if (!first) return;
-    const startDateValue = new Date(first.start_date).getTime();
-    if (Number.isNaN(startDateValue) || startDateValue >= now) return;
-    historyEntries.push({
-      key,
-      location: first.location,
-      start_date: first.start_date,
-      notes,
-      count: notes.length,
-    });
+  const sorted = [...eventBookings].sort((a, b) => {
+    const aTime = new Date(a.created_at || `${a.booking_date}T${a.booking_time || "00:00"}:00`);
+    const bTime = new Date(b.created_at || `${b.booking_date}T${b.booking_time || "00:00"}:00`);
+    return bTime - aTime;
   });
 
-  historyEntries.sort(
-    (a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
-  );
-
-  historyStatus.textContent = `${historyEntries.length} tapahtumaa historiassa`;
-  if (historyEntries.length === 0) {
-    historyList.innerHTML =
-      '<div class="empty-notes">Ei vielä historiallisia merkintöjä.</div>';
-    return;
-  }
-
-  historyList.innerHTML = historyEntries
+  historyList.innerHTML = sorted
     .slice(0, 10)
     .map((entry) => {
-      const latestComment = entry.notes[0];
       return `
       <article class="history-item">
         <div class="history-top">
-          <h3 class="history-title">
-            ${escapeHtml(entry.location)}
-            <span class="count-badge">${entry.count}</span>
-          </h3>
-          <span class="history-date">${formatDateOnly(entry.start_date)}</span>
+          <h3 class="history-title">${escapeHtml(entry.customer_name || "Asiakas")}</h3>
+          <span class="history-date">${formatDateOnly(entry.booking_date)}</span>
         </div>
         <p class="history-comment">
-          Viimeisin: ${escapeHtml(latestComment.soittaja)} - ${escapeHtml(
-        latestComment.kommentti
-      )}
+          ${escapeHtml(entry.event_name || "Ei tapahtumaa")} - ${escapeHtml(
+        entry.booking_time || "--:--"
+      )} - ${getStatusLabel(entry.status)}
         </p>
       </article>
     `;
@@ -930,7 +1052,6 @@ async function refreshAllNotesData() {
   if (!client) {
     notesByEventKey = new Map();
     noteCountsByEventKey = new Map();
-    renderHistory();
     return;
   }
 
@@ -943,15 +1064,12 @@ async function refreshAllNotesData() {
     .limit(2000);
 
   if (error) {
-    historyStatus.textContent = `Historian lataus epäonnistui: ${error.message}`;
-    historyList.innerHTML = '<div class="empty-notes">Historiaa ei voitu ladata.</div>';
     return;
   }
 
   const { grouped, counts } = groupNotesByEventKey(data ?? []);
   notesByEventKey = grouped;
   noteCountsByEventKey = counts;
-  renderHistory();
 }
 
 async function loadNotesForEvent(event) {
@@ -1134,6 +1252,7 @@ if (bookingDate) {
 }
 
 buildBookingTimeOptions();
+buildHomeVisitTimeOptions();
 navItems.forEach((item) => {
   item.addEventListener("click", () => {
     const view = item.dataset.view;
@@ -1168,32 +1287,46 @@ calendarTabs.forEach((tab) => {
 
 if (toggleHomeVisitFormButton && homeVisitForm) {
   toggleHomeVisitFormButton.addEventListener("click", () => {
-    homeVisitForm.classList.toggle("hidden");
+    const willOpen = homeVisitForm.classList.contains("hidden");
+    if (willOpen) {
+      buildHomeVisitTimeOptions();
+      resetHomeVisitFormState();
+      homeVisitForm.classList.remove("hidden");
+      return;
+    }
+    homeVisitForm.classList.add("hidden");
+    homeVisitForm.reset();
+    buildHomeVisitTimeOptions();
+    resetHomeVisitFormState();
   });
 }
 
 if (homeVisitForm) {
   homeVisitForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (!hvCustomerName || !hvAddress || !hvVisitTime || !hvDetails) return;
+    if (!hvCustomerName || !hvAddress || !hvVisitDate || !hvVisitTime || !hvDetails) return;
     const customerName = hvCustomerName.value.trim();
     const nickname = hvNickname?.value.trim() ?? "";
     const address = hvAddress.value.trim();
     const phone = hvPhone?.value.trim() ?? "";
+    const visitDate = hvVisitDate.value;
     const visitTime = hvVisitTime.value;
     const details = hvDetails.value.trim();
-    if (!customerName || !address || !visitTime || !details) return;
+    if (!customerName || !address || !visitDate || !visitTime || !details) return;
 
     if (saveHomeVisitButton) saveHomeVisitButton.disabled = true;
-    const result = await saveHomeVisit({
+    const payload = {
       customer_name: customerName,
       nickname,
       phone,
       address,
-      visit_time: new Date(visitTime).toISOString(),
+      visit_time: new Date(`${visitDate}T${visitTime}:00`).toISOString(),
       details,
       status: "sovittu",
-    });
+    };
+    const result = editingHomeVisitId
+      ? await updateHomeVisit(editingHomeVisitId, payload)
+      : await saveHomeVisit(payload);
     if (saveHomeVisitButton) saveHomeVisitButton.disabled = false;
     if (!result.ok) {
       alert(`Kotikäynnin tallennus epäonnistui: ${result.message}`);
@@ -1201,6 +1334,8 @@ if (homeVisitForm) {
     }
     homeVisitForm.reset();
     homeVisitForm.classList.add("hidden");
+    buildHomeVisitTimeOptions();
+    resetHomeVisitFormState();
   });
 }
 
@@ -1227,15 +1362,13 @@ if (bookingForm) {
     const customerName = bookingCustomerName.value.trim();
     const date = bookingDate.value;
     const selectedTime = bookingTime.value;
-    const type = bookingType?.value || "Kulta-arviointi";
+    const type = "Tapahtumavaraus";
     const phone = bookingPhone?.value.trim() ?? "";
     const status = bookingStatus?.value || "odottaa";
     const owner = bookingOwner?.value.trim() ?? "";
     const selectedKey = bookingEventSelect?.value ?? "";
     const eventOfDay = getEventsForDate(date).find((item) => eventKey(item) === selectedKey);
-    const eventName = eventOfDay
-      ? `${eventOfDay.title} - ${eventOfDay.location}`
-      : "";
+    const eventName = eventOfDay ? eventOfDay.location : "";
 
     if (!customerName || !date || !selectedTime) {
       alert("Valitse aika listasta.");

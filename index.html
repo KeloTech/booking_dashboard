@@ -40,20 +40,12 @@
           <button type="button" class="nav-item active" data-view="dashboard">Päänäkymä</button>
           <button type="button" class="nav-item" data-view="calendar">Kalenteri</button>
           <button type="button" class="nav-item" data-view="homeVisits">Kotikäynnit</button>
-          <button type="button" class="nav-item" data-view="bookings">Varaukset</button>
+          <button type="button" class="nav-item" data-view="bookings">Tapahtumavaraukset</button>
         </nav>
       </aside>
 
       <main class="container">
         <header class="header">
-          <div class="header-left">
-            <div>
-            <h1 class="header-brand">
-              <span class="logo-kulta">Kulta</span><span class="logo-myynti">myynti</span>
-            </h1>
-            <p class="subtitle">Tapahtumien varaustilanne reaaliajassa</p>
-            </div>
-          </div>
           <button id="refreshButton" type="button">Päivitä nyt</button>
         </header>
 
@@ -69,6 +61,8 @@
               </p>
             </div>
             <svg id="bookingChart" class="booking-chart" viewBox="0 0 680 220" preserveAspectRatio="none">
+              <g id="chartYAxisLabels"></g>
+              <g id="chartXAxisLabels"></g>
               <line id="chartTargetLine" x1="12" y1="110" x2="668" y2="110"></line>
               <polyline id="chartLine" points="12,210 668,210"></polyline>
               <g id="chartDots"></g>
@@ -207,7 +201,13 @@
               <label>Nimimerkki<input id="hvNickname" type="text" placeholder="Esim. MK" /></label>
               <label>Puhelin<input id="hvPhone" type="text" /></label>
               <label>Osoite<input id="hvAddress" type="text" required /></label>
-              <label>Aika<input id="hvVisitTime" type="datetime-local" required /></label>
+              <label>Päivämäärä<input id="hvVisitDate" type="date" required /></label>
+              <label>
+                Aika
+                <select id="hvVisitTime" class="home-visit-select" required>
+                  <option value="">Valitse aika</option>
+                </select>
+              </label>
             </div>
             <label>Lisätiedot<textarea id="hvDetails" rows="3" required></textarea></label>
             <div class="home-actions">
@@ -216,6 +216,11 @@
           </form>
 
           <section class="home-visit-section">
+            <h3>Tulevat käynnit</h3>
+            <div id="futureHomeVisitsList" class="home-visit-list"></div>
+          </section>
+
+          <section class="home-visit-section today-section">
             <h3>Tänään</h3>
             <div id="todayHomeVisitsList" class="home-visit-list"></div>
           </section>
@@ -224,19 +229,14 @@
             <h3>Aiemmat käynnit</h3>
             <div id="pastHomeVisitsList" class="home-visit-list"></div>
           </section>
-
-          <section class="home-visit-section">
-            <h3>Tulevat käynnit</h3>
-            <div id="futureHomeVisitsList" class="home-visit-list"></div>
-          </section>
         </section>
 
         <section id="bookingsView" class="view hidden">
           <div class="section-head">
             <div>
-              <h2>Varaukset</h2>
+              <h2>Tapahtumavaraukset</h2>
               <p id="bookingsSubtitle" class="section-subtitle">
-                Hallinnoi ja merkitse omat varauksesi.
+                Hallinnoi ja merkitse tapahtumavarauksia.
               </p>
             </div>
             <button id="toggleBookingFormButton" type="button">+ Uusi varaus</button>
@@ -246,13 +246,7 @@
             <div class="home-grid">
               <label>Asiakas<input id="bookingCustomerName" type="text" required /></label>
               <label>Puhelin<input id="bookingPhone" type="text" /></label>
-              <label>
-                Tyyppi
-                <select id="bookingType" class="home-visit-select">
-                  <option value="Kulta-arviointi">Kulta-arviointi</option>
-                  <option value="Kotikäynti">Kotikäynti</option>
-                </select>
-              </label>
+              <label>Tyyppi<input id="bookingTypeFixed" type="text" value="Tapahtumavaraus" readonly /></label>
               <label>Päivämäärä<input id="bookingDate" type="date" required /></label>
               <label>
                 Aika
@@ -296,10 +290,8 @@
               <thead>
                 <tr>
                   <th>Asiakas</th>
-                  <th>Päivämäärä</th>
                   <th>Tapahtuma</th>
-                  <th>Tyyppi</th>
-                  <th>Aika</th>
+                  <th>Kirjattu</th>
                   <th>Puhelin</th>
                   <th>Tila</th>
                   <th>Nimi</th>
