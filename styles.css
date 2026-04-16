@@ -317,7 +317,7 @@ button:disabled:hover {
 
 .booking-chart {
   width: 100%;
-  height: 240px;
+  height: 330px;
   display: block;
 }
 
@@ -344,15 +344,14 @@ button:disabled:hover {
 #chartLine {
   fill: none;
   stroke: var(--accent);
-  stroke-width: 3;
+  stroke-width: 3.2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-#chartDots circle {
-  fill: var(--accent);
-  stroke: #fef8eb;
-  stroke-width: 2;
+#chartArea {
+  fill: url(#chartAreaGradient);
+  opacity: 0.34;
 }
 
 #chartTargetLabel {
@@ -421,7 +420,9 @@ button:disabled:hover {
 }
 
 .weekly-head h2 {
-  font-size: 1rem;
+  font-size: 1.02rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .weekly-head p {
@@ -433,7 +434,7 @@ button:disabled:hover {
   margin-top: 0.75rem;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.6rem;
+  gap: 0.65rem;
   align-items: end;
 }
 
@@ -443,11 +444,13 @@ button:disabled:hover {
 
 .week-target-line {
   position: absolute;
-  left: 0;
-  right: 0;
-  border-top: 2px dashed #cbb99a;
+  left: 0.1rem;
+  right: 0.1rem;
+  border-top: 2px dashed #cfbea2;
   top: calc(var(--week-target-pct, 50) * 1%);
-  z-index: 1;
+  z-index: 3;
+  transform: translateY(-1px);
+  pointer-events: none;
 }
 
 .week-col {
@@ -458,26 +461,40 @@ button:disabled:hover {
 
 .week-count {
   display: block;
-  font-weight: 600;
+  font-weight: 700;
   color: #6f5f48;
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.45rem;
 }
 
 .week-bar-bg {
-  height: 82px;
-  border-radius: 0.45rem;
-  background: #ece7de;
-  overflow: hidden;
+  height: 86px;
+  border-radius: 0.58rem;
+  background: transparent;
+  overflow: visible;
   display: flex;
   align-items: flex-end;
+  border: none;
 }
 
 .week-bar {
   height: 0%;
   width: 100%;
-  background: linear-gradient(180deg, #d6bb82, #b98e46);
-  border-radius: 0.45rem;
-  transition: height 0.25s ease;
+  background: linear-gradient(180deg, #cd9f50, #b8883b);
+  border-radius: 0.52rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: height 0.28s ease;
+}
+
+.week-bar.is-good {
+  background: linear-gradient(180deg, #1e9d78, #26b489);
+}
+
+.week-bar.is-warn {
+  background: linear-gradient(180deg, #f5d44f, #e2be2f);
+}
+
+.week-bar.is-low {
+  background: linear-gradient(180deg, #d16f6f, #bc4f4f);
 }
 
 .week-day {
@@ -488,10 +505,14 @@ button:disabled:hover {
 }
 
 .week-progress {
-  margin: 0.6rem 0 0;
+  margin: 0.65rem 0 0;
   text-align: center;
   color: var(--accent-strong);
-  font-size: 0.9rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  background: #f6f1e7;
+  border-radius: 0.52rem;
+  padding: 0.42rem 0.65rem;
 }
 
 .history-wrap {
@@ -566,6 +587,119 @@ button:disabled:hover {
   margin: 0.45rem 0 0;
   color: #334155;
   font-size: 0.9rem;
+}
+
+.events-wrap {
+  padding: 0.75rem;
+}
+
+.events-progress-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.toggle-events-button {
+  margin-top: 0.7rem;
+  width: 100%;
+  background: #f9f4e8;
+}
+
+.event-progress-item {
+  border: 1px solid var(--line);
+  border-radius: 0.72rem;
+  background: #fffdf8;
+  padding: 0.7rem 0.78rem;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.event-progress-item:hover {
+  border-color: #d8c29b;
+  background: #fdf7ea;
+}
+
+.event-progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: flex-start;
+}
+
+.event-progress-location {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.event-progress-date {
+  margin: 0.18rem 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.event-progress-value {
+  margin: 0;
+  color: #7a6540;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.event-progress-value span {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #3f3324;
+}
+
+.event-progress-bar {
+  position: relative;
+  margin-top: 0.55rem;
+  height: 12px;
+  border-radius: 999px;
+  background: #ece8df;
+  overflow: hidden;
+}
+
+.event-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.event-progress-fill.is-good {
+  background: linear-gradient(90deg, #1e9d78, #26b489);
+}
+
+.event-progress-fill.is-warn {
+  background: linear-gradient(90deg, #f5d44f, #e2be2f);
+}
+
+.event-progress-fill.is-low {
+  background: linear-gradient(90deg, #d16f6f, #bc4f4f);
+}
+
+.event-progress-target {
+  position: absolute;
+  right: 0.35rem;
+  top: -1.18rem;
+  color: var(--muted);
+  font-size: 0.73rem;
+  font-weight: 600;
+}
+
+.event-progress-meta {
+  margin-top: 0.52rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+  color: #6b604f;
+  font-size: 0.82rem;
+  align-items: center;
+}
+
+.event-progress-arrow {
+  margin-left: auto;
+  color: #9a8d77;
+  font-size: 1.05rem;
+  line-height: 1;
 }
 
 .table-wrap {

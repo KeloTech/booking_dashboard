@@ -4,10 +4,11 @@ const API_URL =
   "https://script.googleusercontent.com/macros/echo?user_content_key=AWDtjMXci3_5NkPy0FS_ddSHbzMfeKYyNEXAnA107MsKtOgkoFYt6sLwndImsrlpSIwstTsMfrIrjS7yc2OadtiuyCfIDMzbjaPvMv6Gc-H9n5smZeN0itJyD7X9PW4WkmqzTkz4DD7Yo_al2QJ3EwZ9X17lmYHDZnTmJioPlK0wo4-UnVnW15zBXIK7ubNmNNbJeV1jB3HiPMWH9dUbyLfCSnGEH1Zr5JfBUjUfjCxFBkSfrcgP-LSldLFKHiCCMBIqnqUhuGK5iNpDaHC1fzXhnCREj4ila6IOw5KBDpRt&lib=MfFvjvB14MTaUuGb9I0ppQ7vDcWBALqSa";
 
 const REFRESH_MS = 60000;
-const DASHBOARD_PIN = "3107";
+const DASHBOARD_PIN = "3105Ranta!4601";
 const PIN_SESSION_KEY = "dashboardPinUnlocked";
 const TODAY_TARGET = 12;
 const WEEKDAY_TARGET = 12;
+const WEEK_TARGET_HEADROOM = 1.35;
 const CHART_START_HOUR = 7;
 const CHART_END_HOUR = 23;
 const HOME_VISITS_STORAGE_KEY = "localHomeVisits";
@@ -18,6 +19,7 @@ const supabaseUrl = import.meta.env.SUPABASE_URL ?? "";
 const supabaseAnonKey = import.meta.env.SUPABASE_ANON_KEY ?? "";
 
 const eventsBody = document.getElementById("eventsBody");
+const toggleEventsButton = document.getElementById("toggleEventsButton");
 const searchInput = document.getElementById("searchInput");
 const statusText = document.getElementById("statusText");
 const updatedText = document.getElementById("updatedText");
@@ -78,6 +80,7 @@ const todayBookedValue = document.getElementById("todayBookedValue");
 const todayTargetValue = document.getElementById("todayTargetValue");
 const chartCaption = document.getElementById("chartCaption");
 const chartLine = document.getElementById("chartLine");
+const chartArea = document.getElementById("chartArea");
 const chartDots = document.getElementById("chartDots");
 const chartTargetLine = document.getElementById("chartTargetLine");
 const chartTargetLabel = document.getElementById("chartTargetLabel");
@@ -119,6 +122,7 @@ let calendarMode = "all";
 let calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let bookings = [];
 let editingBookingId = null;
+let showAllEvents = false;
 
 function isSupabaseConfigured() {
   return Boolean(supabaseUrl && supabaseAnonKey);
@@ -159,6 +163,12 @@ function getRemainingPillClass(remainingReal) {
   if (remainingReal <= 5) return "pill pill-low";
   if (remainingReal <= 15) return "pill pill-warn";
   return "pill pill-good";
+}
+
+function getBookingColorClass(count) {
+  if (count >= 12) return "is-good";
+  if (count >= 6) return "is-warn";
+  return "is-low";
 }
 
 /** Sama kuin Supabase event_key: location + "_" + startDate (API:n startDate sellaisenaan) */
@@ -220,6 +230,11 @@ function isConfirmedBooking(entry) {
 function isEventBooking(entry) {
   const type = String(entry.booking_type || "").toLowerCase();
   return type === "tapahtumavaraus" || Boolean(entry.event_key);
+}
+
+function isActiveEventBooking(entry) {
+  const status = String(entry.status || "").toLowerCase();
+  return isEventBooking(entry) && status !== "peruttu";
 }
 
 function getCurrentStreak(dayCountMap) {
@@ -535,6 +550,7 @@ async function loadHomeVisits() {
   const client = getSupabase();
   if (!client) {
     homeVisits = getLocalHomeVisits();
+    renderOverviewStats();
     renderCalendar();
     renderHomeVisits();
     return;
@@ -546,11 +562,13 @@ async function loadHomeVisits() {
 
   if (error) {
     homeVisits = getLocalHomeVisits();
+    renderOverviewStats();
     renderCalendar();
     renderHomeVisits();
     return;
   }
   homeVisits = data ?? [];
+  renderOverviewStats();
   renderCalendar();
   renderHomeVisits();
 }
@@ -564,6 +582,7 @@ async function saveHomeVisit(entry) {
     ];
     homeVisits = next;
     setLocalHomeVisits(next);
+    renderOverviewStats();
     renderCalendar();
     renderHomeVisits();
     return { ok: true };
@@ -580,6 +599,7 @@ async function updateHomeVisit(id, entry) {
   if (!client) {
     homeVisits = homeVisits.map((visit) => (visit.id === id ? { ...visit, ...entry } : visit));
     setLocalHomeVisits(homeVisits);
+    renderOverviewStats();
     renderCalendar();
     renderHomeVisits();
     return { ok: true };
@@ -630,6 +650,7 @@ async function updateHomeVisitStatus(id, status) {
   if (!client) {
     homeVisits = homeVisits.map((visit) => (visit.id === id ? { ...visit, status } : visit));
     setLocalHomeVisits(homeVisits);
+    renderOverviewStats();
     renderHomeVisits();
     return;
   }
@@ -781,6 +802,7 @@ function drawTodayChart(hourlyCounts, target, yAxisMax) {
   if (
     !chartLine ||
     !chartDots ||
+    !chartArea ||
     !chartTargetLine ||
     !chartTargetLabel ||
     !chartXAxisLabels ||
@@ -789,11 +811,11 @@ function drawTodayChart(hourlyCounts, target, yAxisMax) {
     return;
   }
   const width = 680;
-  const height = 220;
+  const height = 260;
   const left = 42;
   const right = width - 12;
-  const bottom = height - 28;
-  const top = 18;
+  const bottom = height - 30;
+  const top = 22;
   const steps = hourlyCounts.length - 1;
   const maxValue = Math.max(yAxisMax, target, ...hourlyCounts, 1);
   const points = hourlyCounts.map((count, index) => {
@@ -801,16 +823,28 @@ function drawTodayChart(hourlyCounts, target, yAxisMax) {
     const y = bottom - ((bottom - top) * count) / maxValue;
     return { x, y, count };
   });
-  chartLine.setAttribute(
-    "points",
-    points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ")
+  const now = new Date();
+  const nextWholeHour =
+    now.getHours() + (now.getMinutes() > 0 || now.getSeconds() > 0 || now.getMilliseconds() > 0 ? 1 : 0);
+  const visibleHour = Math.min(CHART_END_HOUR, Math.max(CHART_START_HOUR, nextWholeHour));
+  const visibleIndex = Math.min(points.length - 1, Math.max(0, visibleHour - CHART_START_HOUR));
+  const visiblePoints = points.slice(0, visibleIndex + 1);
+
+  const smoothPath = visiblePoints.reduce((path, point, index, arr) => {
+    if (index === 0) return `M ${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
+    const prev = arr[index - 1];
+    const midX = ((prev.x + point.x) / 2).toFixed(1);
+    return `${path} Q ${midX} ${prev.y.toFixed(1)}, ${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
+  }, "");
+  chartDots.innerHTML = "";
+  const lastVisiblePoint = visiblePoints[visiblePoints.length - 1] || points[0];
+  chartArea.setAttribute(
+    "d",
+    `${smoothPath} L ${lastVisiblePoint.x.toFixed(1)} ${bottom.toFixed(
+      1
+    )} L ${left.toFixed(1)} ${bottom.toFixed(1)} Z`
   );
-  chartDots.innerHTML = points
-    .map(
-      (point) =>
-        `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="4"></circle>`
-    )
-    .join("");
+  chartLine.setAttribute("d", smoothPath);
   const targetY = bottom - ((bottom - top) * target) / maxValue;
   chartTargetLine.setAttribute("x1", String(left));
   chartTargetLine.setAttribute("x2", String(right));
@@ -820,7 +854,7 @@ function drawTodayChart(hourlyCounts, target, yAxisMax) {
   chartTargetLabel.setAttribute("y", String(Math.max(targetY - 8, 12)));
 
   const xLabels = [];
-  for (let hour = CHART_START_HOUR; hour <= CHART_END_HOUR; hour += 1) {
+  for (let hour = CHART_START_HOUR; hour <= CHART_END_HOUR; hour += 2) {
     const index = hour - CHART_START_HOUR;
     const x = left + ((right - left) * index) / Math.max(steps, 1);
     xLabels.push(`<text x="${x.toFixed(1)}" y="${height - 8}">${hour}:00</text>`);
@@ -828,29 +862,36 @@ function drawTodayChart(hourlyCounts, target, yAxisMax) {
   chartXAxisLabels.innerHTML = xLabels.join("");
 
   const yLabels = [];
-  const yStep = yAxisMax <= 15 ? 1 : 2;
-  for (let value = 0; value <= yAxisMax; value += yStep) {
+  const yValues = yAxisMax <= 15 ? [0, 4, 8, 12, 15] : [0, 6, 12, 18, 24, 30];
+  yValues.forEach((value) => {
     const y = bottom - ((bottom - top) * value) / yAxisMax;
     yLabels.push(`<text x="${left - 6}" y="${(y + 3).toFixed(1)}">${value}</text>`);
-  }
+  });
   chartYAxisLabels.innerHTML = yLabels.join("");
 }
 
-function renderOverviewStats(bookingsList) {
+function renderOverviewStats(bookingsList = bookings) {
   if (!todayBookedValue || !todayTargetValue || !chartCaption) return;
   const now = new Date();
   const todayStart = startOfDay(now);
   const tomorrow = new Date(todayStart);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
-  const confirmedBookings = bookingsList
-    .filter(isEventBooking)
-    .filter(isConfirmedBooking);
-  const todayBookings = confirmedBookings.filter((entry) => {
-    const dateTime = getBookingDateTime(entry);
-    return dateTime >= todayStart && dateTime < tomorrow;
+  const activeEventBookings = bookingsList.filter(isActiveEventBooking);
+  const manualHomeVisits = homeVisits.filter((visit) => {
+    const status = String(visit.status || "").toLowerCase();
+    return status === "sovittu" || status === "valmis";
   });
-  const todayCount = todayBookings.length;
+  const manualEntries = [
+    ...activeEventBookings.map((entry) => ({ created_at: entry.created_at, status: entry.status })),
+    ...manualHomeVisits.map((visit) => ({ created_at: visit.created_at || visit.visit_time, status: visit.status })),
+  ];
+
+  const todayEntries = manualEntries.filter((entry) => {
+    const createdAt = new Date(entry.created_at);
+    return createdAt >= todayStart && createdAt < tomorrow;
+  });
+  const todayCount = todayEntries.length;
   todayBookedValue.textContent = String(todayCount);
   todayTargetValue.textContent = String(TODAY_TARGET);
 
@@ -862,15 +903,20 @@ function renderOverviewStats(bookingsList) {
 
   const rangeLength = CHART_END_HOUR - CHART_START_HOUR + 1;
   const hourly = Array.from({ length: rangeLength }, () => 0);
-  todayBookings.forEach((entry) => {
-    const dateTime = getBookingDateTime(entry);
-    const hour = dateTime.getHours();
-    if (hour < CHART_START_HOUR) {
+  todayEntries.forEach((entry) => {
+    const createdAt = new Date(entry.created_at);
+    const decimalHour =
+      createdAt.getHours() +
+      createdAt.getMinutes() / 60 +
+      createdAt.getSeconds() / 3600 +
+      createdAt.getMilliseconds() / 3600000;
+    const bucketHour = Math.ceil(decimalHour);
+    if (bucketHour < CHART_START_HOUR) {
       hourly[0] += 1;
-    } else if (hour > CHART_END_HOUR) {
+    } else if (bucketHour > CHART_END_HOUR) {
       hourly[rangeLength - 1] += 1;
     } else {
-      hourly[hour - CHART_START_HOUR] += 1;
+      hourly[bucketHour - CHART_START_HOUR] += 1;
     }
   });
   const cumulative = [];
@@ -882,7 +928,9 @@ function renderOverviewStats(bookingsList) {
   const yAxisMax = todayCount >= TODAY_TARGET ? 30 : 15;
   drawTodayChart(cumulative, TODAY_TARGET, yAxisMax);
 
-  const dayCountMap = getCreatedDayCountMap(confirmedBookings);
+  const dayCountMap = getCreatedDayCountMap(
+    manualEntries.map((entry) => ({ created_at: entry.created_at }))
+  );
   if (streakValue && streakLabel) {
     const streak = getCurrentStreak(dayCountMap);
     streakValue.textContent = String(streak);
@@ -927,12 +975,20 @@ function renderOverviewStats(bookingsList) {
   weekWedVal.textContent = String(counts[2]);
   weekThuVal.textContent = String(counts[3]);
 
-  const chartMax = Math.max(...counts, WEEKDAY_TARGET, 1);
-  const heights = counts.map((count) => `${(count / chartMax) * 100}%`);
+  const chartMax = Math.max(...counts, Math.ceil(WEEKDAY_TARGET * WEEK_TARGET_HEADROOM), 1);
+  const heights = counts.map((count) => {
+    if (count <= 0) return "0%";
+    const pct = (count / chartMax) * 100;
+    return `max(6px, ${pct.toFixed(2)}%)`;
+  });
   weekMonBar.style.height = heights[0];
   weekTueBar.style.height = heights[1];
   weekWedBar.style.height = heights[2];
   weekThuBar.style.height = heights[3];
+  [weekMonBar, weekTueBar, weekWedBar, weekThuBar].forEach((bar, idx) => {
+    bar.classList.remove("is-low", "is-warn", "is-good");
+    bar.classList.add(getBookingColorClass(counts[idx]));
+  });
 
   const targetPct = Math.min((WEEKDAY_TARGET / chartMax) * 100, 100);
   if (weekTargetLine) {
@@ -1113,7 +1169,7 @@ function renderDrawer(event) {
     <div class="meta-row"><span class="meta-label">Varattu yhteensä</span><span class="meta-value">${
       event.bookedTotal
     }</span></div>
-    <div class="meta-row"><span class="meta-label">Testivaraukset</span><span class="meta-value">${
+    <div class="meta-row"><span class="meta-label">Dummy-varaukset</span><span class="meta-value">${
       event.bookedFake
     }</span></div>
     <div class="meta-row"><span class="meta-label">Oikeat varaukset</span><span class="meta-value">${
@@ -1154,37 +1210,63 @@ function renderTable() {
 
   if (filtered.length === 0) {
     eventsBody.innerHTML = `
-      <tr>
-        <td colspan="7">Ei tuloksia valitulla haulla.</td>
-      </tr>
+      <div class="empty-notes">Ei tuloksia valitulla haulla.</div>
     `;
+    if (toggleEventsButton) toggleEventsButton.classList.add("hidden");
     statusText.textContent = "Ei tapahtumia näytettävänä.";
     return;
   }
 
-  const rows = filtered
+  const visibleEvents = showAllEvents ? filtered : filtered.slice(0, 4);
+  const rows = visibleEvents
     .map((event, index) => {
-      const noteCount = noteCountsByEventKey.get(eventKey(event)) ?? 0;
+      const bookedReal = Number(event.bookedReal) || 0;
+      const bookedTotal = Number(event.bookedTotal) || 0;
+      const bookedFake = Number(event.bookedFake) || 0;
+      const remainingReal = Number(event.remainingReal) || 0;
+      const target = Math.max(bookedReal + remainingReal, 1);
+      const progressPct = Math.min((bookedReal / target) * 100, 100);
+      const progressClass = getBookingColorClass(bookedReal);
       return `
-      <tr class="clickable-row" data-event-index="${index}" title="Avaa tapahtuman tiedot">
-        <td>${escapeHtml(event.title)} <span class="count-badge">${noteCount}</span></td>
-        <td>${escapeHtml(event.location)}</td>
-        <td>${formatDateOnly(event.startDate)}</td>
-        <td>${event.bookedTotal}</td>
-        <td>${event.bookedFake}</td>
-        <td>${event.bookedReal}</td>
-        <td><span class="${getRemainingPillClass(event.remainingReal)}">${event.remainingReal}</span></td>
-      </tr>
+      <article class="event-progress-item" data-event-index="${index}" title="Avaa tapahtuman tiedot">
+        <div class="event-progress-head">
+          <div>
+            <p class="event-progress-location">${escapeHtml(event.location)}</p>
+            <p class="event-progress-date">${formatDateOnly(event.startDate)}</p>
+          </div>
+          <p class="event-progress-value"><span>${bookedReal}</span> / ${target}</p>
+        </div>
+        <div class="event-progress-bar" role="img" aria-label="Oikeat varaukset ${bookedReal} / ${target}">
+          <div class="event-progress-fill ${progressClass}" style="width: ${progressPct.toFixed(1)}%"></div>
+          <span class="event-progress-target">Tavoite ${target}</span>
+        </div>
+        <div class="event-progress-meta">
+          <span>Yhteensä ${bookedTotal}</span>
+          <span>Dummy-varaukset ${bookedFake}</span>
+          <span>Vapaita ${remainingReal}</span>
+          <span class="event-progress-arrow">›</span>
+        </div>
+      </article>
       `;
     })
     .join("");
 
   eventsBody.innerHTML = rows;
-  statusText.textContent = `Näytetään ${filtered.length} / ${allEvents.length} tapahtumaa.`;
+  if (toggleEventsButton) {
+    if (filtered.length > 4) {
+      toggleEventsButton.classList.remove("hidden");
+      toggleEventsButton.textContent = showAllEvents
+        ? "Näytä vain 4 ylimpää"
+        : `Katso kaikki (${filtered.length})`;
+    } else {
+      toggleEventsButton.classList.add("hidden");
+    }
+  }
+  statusText.textContent = `Näytetään ${visibleEvents.length} / ${filtered.length} tapahtumaa.`;
 
-  eventsBody.querySelectorAll(".clickable-row").forEach((row) => {
-    row.addEventListener("click", () => {
-      const index = Number(row.getAttribute("data-event-index"));
+  eventsBody.querySelectorAll(".event-progress-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      const index = Number(item.getAttribute("data-event-index"));
       const event = filtered[index];
       if (event) openDrawer(event);
     });
@@ -1235,14 +1317,18 @@ async function loadData() {
     statusText.textContent = `Virhe datan haussa: ${error.message}`;
     updatedText.textContent = "Yritetään uudelleen automaattisesti.";
     eventsBody.innerHTML = `
-      <tr>
-        <td colspan="7">Datan haku epäonnistui. Tarkista yhteys ja yritä uudelleen.</td>
-      </tr>
+      <div class="empty-notes">Datan haku epäonnistui. Tarkista yhteys ja yritä uudelleen.</div>
     `;
   }
 }
 
 searchInput.addEventListener("input", renderTable);
+if (toggleEventsButton) {
+  toggleEventsButton.addEventListener("click", () => {
+    showAllEvents = !showAllEvents;
+    renderTable();
+  });
+}
 if (bookingSearchInput) {
   bookingSearchInput.addEventListener("input", renderBookings);
 }

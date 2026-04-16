@@ -60,11 +60,18 @@
                 <span id="todayTargetValue">12</span>
               </p>
             </div>
-            <svg id="bookingChart" class="booking-chart" viewBox="0 0 680 220" preserveAspectRatio="none">
+            <svg id="bookingChart" class="booking-chart" viewBox="0 0 680 260" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="chartAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#c79b4f"></stop>
+                  <stop offset="100%" stop-color="#c79b4f" stop-opacity="0"></stop>
+                </linearGradient>
+              </defs>
               <g id="chartYAxisLabels"></g>
               <g id="chartXAxisLabels"></g>
+              <path id="chartArea" d=""></path>
               <line id="chartTargetLine" x1="12" y1="110" x2="668" y2="110"></line>
-              <polyline id="chartLine" points="12,210 668,210"></polyline>
+              <path id="chartLine" d=""></path>
               <g id="chartDots"></g>
               <text id="chartTargetLabel" x="620" y="102">Tavoite</text>
             </svg>
@@ -143,21 +150,11 @@
             <div id="historyList" class="history-list"></div>
           </section>
 
-          <section class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Otsikko</th>
-                  <th>Sijainti</th>
-                  <th>Päivämäärä</th>
-                  <th>Varattu yhteensä</th>
-                  <th>Testivaraukset</th>
-                  <th>Oikeat varaukset</th>
-                  <th>Vapaita paikkoja</th>
-                </tr>
-              </thead>
-              <tbody id="eventsBody"></tbody>
-            </table>
+          <section class="events-wrap card">
+            <div id="eventsBody" class="events-progress-list"></div>
+            <button id="toggleEventsButton" type="button" class="toggle-events-button hidden">
+              Katso kaikki
+            </button>
           </section>
         </section>
 
