@@ -188,6 +188,18 @@ function eventKey(event) {
   return `${event.location}_${event.startDate}`;
 }
 
+/** Sama paikka voi toistua useana tapahtumana — erottele päivä ja kello */
+function formatEventDayAndTime(startDateRaw) {
+  const d = new Date(startDateRaw ?? "");
+  if (Number.isNaN(d.getTime())) return formatDateOnly(startDateRaw);
+  return `${formatDateOnly(d)} klo ${formatBookingTimeFi(d)}`;
+}
+
+function formatEventSelectLabel(event) {
+  const loc = String(event?.location ?? "").trim() || "Tapahtuma";
+  return `${loc} · ${formatEventDayAndTime(event.startDate)}`;
+}
+
 function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
@@ -197,7 +209,11 @@ function escapeHtml(text) {
 function getFilteredDashboardEvents() {
   const query = searchInput.value.trim().toLowerCase();
   return allEvents.filter((event) => {
-    const text = `${event.title ?? ""} ${event.location}`.toLowerCase();
+    const start = new Date(event.startDate ?? "");
+    const dateKey = Number.isNaN(start.getTime()) ? "" : formatIsoDateKey(start);
+    const text = `${event.title ?? ""} ${event.location} ${formatDateOnly(
+      event.startDate
+    )} ${dateKey}`.toLowerCase();
     return text.includes(query);
   });
 }
@@ -208,15 +224,30 @@ function getApiBookingsFromEvent(event) {
 }
 
 function normalizeApiBookingRow(raw) {
+  const first = String(raw.firstName ?? raw.first_name ?? "").trim();
+  const last = String(raw.lastName ?? raw.last_name ?? "").trim();
+  const fromParts = [first, last].filter(Boolean).join(" ").trim();
+  const name =
+    String(raw.name ?? raw.customer_name ?? "")
+      .trim() || fromParts;
+  const orderName = String(raw.orderName ?? raw.order_name ?? "").trim();
   return {
     bookingDate: raw.bookingDate ?? raw.booking_date ?? "",
-    name: String(raw.name ?? raw.customer_name ?? "").trim(),
+    name,
+    firstName: first,
+    lastName: last,
     phone: String(raw.phone ?? "").trim(),
     email: String(raw.email ?? "").trim(),
     status: raw.status ?? "",
     isTest: Boolean(raw.isTest ?? raw.is_test),
+    orderName,
     service: String(
-      raw.service ?? raw.serviceType ?? raw.type ?? raw.bookingType ?? raw.notes ?? ""
+      raw.service ??
+        raw.serviceType ??
+        raw.type ??
+        raw.bookingType ??
+        raw.notes ??
+        ""
     ).trim(),
   };
 }
@@ -351,14 +382,19 @@ function bookingBadgeIconMarkup(icon) {
 
 function buildBookingSubtitle(norm, eventRow, isWeek) {
   let line = "";
-  if (norm.service) line = norm.service;
+  if (norm.orderName) line = norm.orderName;
+  else if (norm.service) line = norm.service;
   else {
     const contact = [norm.phone, norm.email].filter(Boolean).join(" · ");
-    line = contact || String(eventRow.location ?? "").trim();
+    line = contact;
   }
   if (isWeek) {
-    const suffix = formatDateOnly(eventRow.startDate);
-    line = line ? `${line} · ${suffix}` : suffix;
+    const loc = String(eventRow.location ?? "").trim();
+    const day = formatDateOnly(eventRow.startDate);
+    const ctx = [loc, day].filter(Boolean).join(" · ");
+    line = line ? `${line} · ${ctx}` : ctx;
+  } else if (!line) {
+    line = String(eventRow.location ?? "").trim();
   }
   return escapeHtml(line);
 }
@@ -390,7 +426,11 @@ function renderDailyBookings() {
     const weekKeys = getIsoWeekDateKeys(new Date(focusEvent.startDate));
     for (const ev of allEvents) {
       if (!weekKeys.includes(formatIsoDateKey(new Date(ev.startDate)))) continue;
-      const text = `${ev.title ?? ""} ${ev.location}`.toLowerCase();
+      const wkStart = new Date(ev.startDate ?? "");
+      const wkKey = Number.isNaN(wkStart.getTime()) ? "" : formatIsoDateKey(wkStart);
+      const text = `${ev.title ?? ""} ${ev.location} ${formatDateOnly(ev.startDate)} ${wkKey}`
+        .toLowerCase()
+        .trim();
       if (query && !text.includes(query)) continue;
       for (const raw of getApiBookingsFromEvent(ev)) {
         rows.push({ raw, event: ev });
@@ -411,12 +451,15 @@ function renderDailyBookings() {
     })
     .filter(Boolean);
 
-  rows.sort((a, b) => a.instant.getTime() - b.instant.getTime());
+  rows.sort((a, b) => {
+    const dt = a.instant.getTime() - b.instant.getTime();
+    if (dt !== 0) return dt;
+    return new Date(a.event.startDate).getTime() - new Date(b.event.startDate).getTime();
+  });
 
   if (dailyBookingsContext) {
-    dailyBookingsContext.textContent = `${focusEvent.location ?? ""} · ${formatDateOnly(
-      focusEvent.startDate
-    )}${isWeek ? " (koko viikko)" : ""}`;
+    const ctx = `${focusEvent.location ?? ""} · ${formatEventDayAndTime(focusEvent.startDate)}`;
+    dailyBookingsContext.textContent = `${ctx}${isWeek ? " (koko viikko)" : ""}`;
   }
 
   if (rows.length === 0) {
@@ -604,7 +647,7 @@ function updateBookingEventOptions(preferredEventKey = "") {
   }
   bookingEventSelect.innerHTML = events
     .map((event) => {
-      const label = event.location;
+      const label = formatEventSelectLabel(event);
       return `<option value="${escapeHtml(eventKey(event))}">${escapeHtml(label)}</option>`;
     })
     .join("");
@@ -1646,11 +1689,13 @@ function renderTable() {
       const focusClass =
         eventKey(event) === focusedEventKeyForDaily ? " event-progress-item--focus" : "";
       return `
-      <article class="event-progress-item${focusClass}" data-event-index="${index}" title="Avaa tapahtuman tiedot">
+      <article class="event-progress-item${focusClass}" data-event-index="${index}" title="${escapeHtml(
+        formatEventSelectLabel(event)
+      )}">
         <div class="event-progress-head">
           <div>
             <p class="event-progress-location">${escapeHtml(event.location)}</p>
-            <p class="event-progress-date">${formatDateOnly(event.startDate)}</p>
+            <p class="event-progress-date">${escapeHtml(formatEventDayAndTime(event.startDate))}</p>
           </div>
           <p class="event-progress-value"><span>${bookedReal}</span> / ${target}</p>
         </div>
@@ -1887,7 +1932,7 @@ if (bookingForm) {
     const owner = bookingOwner?.value.trim() ?? "";
     const selectedKey = bookingEventSelect?.value ?? "";
     const eventOfDay = getEventsForDate(date).find((item) => eventKey(item) === selectedKey);
-    const eventName = eventOfDay ? eventOfDay.location : "";
+    const eventName = eventOfDay ? formatEventSelectLabel(eventOfDay) : "";
 
     if (!customerName || !date || !selectedTime) {
       alert("Valitse aika listasta.");
