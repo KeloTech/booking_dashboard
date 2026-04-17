@@ -3,6 +3,11 @@ import { createClient } from "@supabase/supabase-js";
 const API_URL =
   "https://script.googleusercontent.com/macros/echo?user_content_key=AWDtjMXci3_5NkPy0FS_ddSHbzMfeKYyNEXAnA107MsKtOgkoFYt6sLwndImsrlpSIwstTsMfrIrjS7yc2OadtiuyCfIDMzbjaPvMv6Gc-H9n5smZeN0itJyD7X9PW4WkmqzTkz4DD7Yo_al2QJ3EwZ9X17lmYHDZnTmJioPlK0wo4-UnVnW15zBXIK7ubNmNNbJeV1jB3HiPMWH9dUbyLfCSnGEH1Zr5JfBUjUfjCxFBkSfrcgP-LSldLFKHiCCMBIqnqUhuGK5iNpDaHC1fzXhnCREj4ila6IOw5KBDpRt&lib=MfFvjvB14MTaUuGb9I0ppQ7vDcWBALqSa";
 
+const BOOKERS_API_URL = API_URL.includes("?") ? `${API_URL}&mode=bookers` : `${API_URL}?mode=bookers`;
+
+/** API:n testivaraukset (isTest) piilotetaan listasta */
+const HIDE_TEST_API_BOOKINGS = true;
+
 const REFRESH_MS = 60000;
 const DASHBOARD_PIN = "3105Ranta!4601";
 const PIN_SESSION_KEY = "dashboardPinUnlocked";
@@ -29,6 +34,7 @@ const eventDrawer = document.getElementById("eventDrawer");
 const closeDrawerButton = document.getElementById("closeDrawerButton");
 const drawerTitle = document.getElementById("drawerTitle");
 const drawerMeta = document.getElementById("drawerMeta");
+const drawerSlotList = document.getElementById("drawerSlotList");
 const addNoteButton = document.getElementById("addNoteButton");
 const notesTitle = document.getElementById("notesTitle");
 const noteForm = document.getElementById("noteForm");
@@ -107,6 +113,9 @@ const pinForm = document.getElementById("pinForm");
 const pinInput = document.getElementById("pinInput");
 const pinError = document.getElementById("pinError");
 const pinSubmitButton = document.getElementById("pinSubmitButton");
+const dailyBookingsList = document.getElementById("dailyBookingsList");
+const dailyBookingsContext = document.getElementById("dailyBookingsContext");
+const dailyViewTabs = document.querySelectorAll(".daily-view-tab[data-daily-mode]");
 
 let allEvents = [];
 let generatedAt = null;
@@ -123,6 +132,9 @@ let calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1
 let bookings = [];
 let editingBookingId = null;
 let showAllEvents = false;
+/** Päänäkymän "Päivän varaukset" -osion tapahtuma (eventKey) */
+let focusedEventKeyForDaily = null;
+let dailyBookingsViewMode = "day";
 
 function isSupabaseConfigured() {
   return Boolean(supabaseUrl && supabaseAnonKey);
@@ -180,6 +192,273 @@ function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
+}
+
+function getFilteredDashboardEvents() {
+  const query = searchInput.value.trim().toLowerCase();
+  return allEvents.filter((event) => {
+    const text = `${event.title ?? ""} ${event.location}`.toLowerCase();
+    return text.includes(query);
+  });
+}
+
+function getApiBookingsFromEvent(event) {
+  const raw = event?.bookings;
+  return Array.isArray(raw) ? raw : [];
+}
+
+function normalizeApiBookingRow(raw) {
+  return {
+    bookingDate: raw.bookingDate ?? raw.booking_date ?? "",
+    name: String(raw.name ?? raw.customer_name ?? "").trim(),
+    phone: String(raw.phone ?? "").trim(),
+    email: String(raw.email ?? "").trim(),
+    status: raw.status ?? "",
+    isTest: Boolean(raw.isTest ?? raw.is_test),
+    service: String(
+      raw.service ?? raw.serviceType ?? raw.type ?? raw.bookingType ?? raw.notes ?? ""
+    ).trim(),
+  };
+}
+
+/** Varattavuusruudukko: oikea varaus, ei dummy/testi/peruttu */
+function isApiBookingRealOccupancy(raw) {
+  if (!raw || typeof raw !== "object") return false;
+  const norm = normalizeApiBookingRow(raw);
+  if (norm.isTest) return false;
+  if (
+    Boolean(raw.isDummy ?? raw.is_dummy ?? raw.dummy ?? raw.isFake ?? raw.fake ?? raw.is_fake)
+  ) {
+    return false;
+  }
+  const typeHint = String(
+    raw.bookingType ?? raw.booking_type ?? raw.type ?? ""
+  )
+    .toLowerCase()
+    .trim();
+  if (typeHint === "dummy" || typeHint === "fake" || typeHint === "test") return false;
+  if (isCancelledApiBookingStatus(norm.status)) return false;
+  return true;
+}
+
+const DRAWER_SLOT_STEP_MIN = 15;
+const DRAWER_SLOT_MAX_ROWS = 64;
+
+function addMinutesToDate(d, mins) {
+  const x = new Date(d.getTime());
+  x.setMinutes(x.getMinutes() + mins);
+  return x;
+}
+
+function floorToQuarterHour(d) {
+  const x = new Date(d.getTime());
+  const mins = x.getMinutes();
+  x.setMinutes(Math.floor(mins / DRAWER_SLOT_STEP_MIN) * DRAWER_SLOT_STEP_MIN, 0, 0);
+  return x;
+}
+
+function ceilToQuarterHour(d) {
+  const x = new Date(d.getTime());
+  let mins = x.getMinutes();
+  const extra = x.getSeconds() + x.getMilliseconds() / 1000;
+  if (mins % DRAWER_SLOT_STEP_MIN === 0 && extra === 0) return x;
+  mins = Math.ceil(mins / DRAWER_SLOT_STEP_MIN) * DRAWER_SLOT_STEP_MIN;
+  if (mins >= 60) {
+    x.setHours(x.getHours() + 1, 0, 0, 0);
+    return x;
+  }
+  x.setMinutes(mins, 0, 0);
+  return x;
+}
+
+function parseApiBookingInstant(bookingDateRaw, fallbackEventStart) {
+  if (!bookingDateRaw) return new Date(fallbackEventStart);
+  const str = String(bookingDateRaw).trim();
+  const direct = new Date(str);
+  if (!Number.isNaN(direct.getTime())) return direct;
+  if (/^\d{1,2}:\d{2}$/.test(str)) {
+    const base = new Date(fallbackEventStart);
+    const [hh, mm] = str.split(":").map((n) => Number(n));
+    base.setHours(hh, mm, 0, 0);
+    return base;
+  }
+  return new Date(fallbackEventStart);
+}
+
+function formatBookingTimeFi(instant) {
+  if (Number.isNaN(instant.getTime())) return "—";
+  return new Intl.DateTimeFormat("fi-FI", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(instant);
+}
+
+function getIsoWeekDateKeys(anchorDate) {
+  const d = new Date(anchorDate);
+  const mondayOffset = (d.getDay() + 6) % 7;
+  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - mondayOffset);
+  const keys = [];
+  for (let i = 0; i < 7; i += 1) {
+    const x = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+    keys.push(formatIsoDateKey(x));
+  }
+  return keys;
+}
+
+function mapApiBookingStatusBadge(statusRaw) {
+  const s = String(statusRaw || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "_");
+  if (s === "booked" || s === "vahvistettu" || s === "confirmed" || s === "confirmé") {
+    return { label: "Vahvistettu", variant: "confirmed", icon: "check", strikeName: false };
+  }
+  if (
+    s === "completed" ||
+    s === "valmis" ||
+    s === "done" ||
+    s === "finished" ||
+    s === "paid"
+  ) {
+    return { label: "Valmis", variant: "done", icon: "check", strikeName: true };
+  }
+  if (s === "pending" || s === "odottaa" || s === "waiting" || s === "new") {
+    return { label: "Odottaa", variant: "pending", icon: "clock", strikeName: false };
+  }
+  if (s === "tentative" || s === "alustava" || s === "hold" || s === "provisional") {
+    return { label: "Alustava", variant: "tentative", icon: "question", strikeName: false };
+  }
+  if (s === "cancelled" || s === "canceled" || s === "peruttu") {
+    return { label: "Peruttu", variant: "cancelled", icon: "none", strikeName: false };
+  }
+  if (s) {
+    const label = s
+      .split("_")
+      .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : ""))
+      .join(" ");
+    return { label: label || "Tuntematon", variant: "neutral", icon: "none", strikeName: false };
+  }
+  return { label: "Odottaa", variant: "pending", icon: "clock", strikeName: false };
+}
+
+function bookingBadgeIconMarkup(icon) {
+  if (icon === "check") return `<span class="daily-badge-icon" aria-hidden="true">✓</span>`;
+  if (icon === "clock") return `<span class="daily-badge-icon" aria-hidden="true">⏱</span>`;
+  if (icon === "question") return `<span class="daily-badge-icon" aria-hidden="true">?</span>`;
+  return "";
+}
+
+function buildBookingSubtitle(norm, eventRow, isWeek) {
+  let line = "";
+  if (norm.service) line = norm.service;
+  else {
+    const contact = [norm.phone, norm.email].filter(Boolean).join(" · ");
+    line = contact || String(eventRow.location ?? "").trim();
+  }
+  if (isWeek) {
+    const suffix = formatDateOnly(eventRow.startDate);
+    line = line ? `${line} · ${suffix}` : suffix;
+  }
+  return escapeHtml(line);
+}
+
+function renderDailyBookings() {
+  if (!dailyBookingsList) return;
+
+  const filtered = getFilteredDashboardEvents();
+  if (filtered.length === 0) {
+    dailyBookingsList.innerHTML = `<div class="empty-daily-bookings">Ei tapahtumia — varauslistaa ei näytetä.</div>`;
+    if (dailyBookingsContext) dailyBookingsContext.textContent = "";
+    return;
+  }
+
+  if (
+    !focusedEventKeyForDaily ||
+    !filtered.some((e) => eventKey(e) === focusedEventKeyForDaily)
+  ) {
+    focusedEventKeyForDaily = eventKey(filtered[0]);
+  }
+
+  const focusEvent =
+    filtered.find((e) => eventKey(e) === focusedEventKeyForDaily) ?? filtered[0];
+  const isWeek = dailyBookingsViewMode === "week";
+
+  const query = searchInput.value.trim().toLowerCase();
+  let rows = [];
+  if (isWeek) {
+    const weekKeys = getIsoWeekDateKeys(new Date(focusEvent.startDate));
+    for (const ev of allEvents) {
+      if (!weekKeys.includes(formatIsoDateKey(new Date(ev.startDate)))) continue;
+      const text = `${ev.title ?? ""} ${ev.location}`.toLowerCase();
+      if (query && !text.includes(query)) continue;
+      for (const raw of getApiBookingsFromEvent(ev)) {
+        rows.push({ raw, event: ev });
+      }
+    }
+  } else {
+    for (const raw of getApiBookingsFromEvent(focusEvent)) {
+      rows.push({ raw, event: focusEvent });
+    }
+  }
+
+  rows = rows
+    .map(({ raw, event }) => {
+      const norm = normalizeApiBookingRow(raw);
+      if (HIDE_TEST_API_BOOKINGS && norm.isTest) return null;
+      const instant = parseApiBookingInstant(norm.bookingDate, event.startDate);
+      return { norm, event, instant };
+    })
+    .filter(Boolean);
+
+  rows.sort((a, b) => a.instant.getTime() - b.instant.getTime());
+
+  if (dailyBookingsContext) {
+    dailyBookingsContext.textContent = `${focusEvent.location ?? ""} · ${formatDateOnly(
+      focusEvent.startDate
+    )}${isWeek ? " (koko viikko)" : ""}`;
+  }
+
+  if (rows.length === 0) {
+    dailyBookingsList.innerHTML = `<div class="empty-daily-bookings">Ei varauksia${
+      isWeek ? " tällä viikolla" : " tälle päivälle"
+    }.</div>`;
+    return;
+  }
+
+  const html = rows
+    .map(({ norm, event, instant }) => {
+      const badge = mapApiBookingStatusBadge(norm.status);
+      const timeStr = formatBookingTimeFi(instant);
+      const sub = buildBookingSubtitle(norm, event, isWeek);
+      const nameClass = badge.strikeName ? "daily-booking-name is-done" : "daily-booking-name";
+      return `
+        <div class="daily-booking-row">
+          <div class="daily-booking-time">${escapeHtml(timeStr)}</div>
+          <div class="daily-booking-main">
+            <p class="${nameClass}">${escapeHtml(norm.name || "—")}</p>
+            <p class="daily-booking-sub">${sub}</p>
+          </div>
+          <div>
+            <span class="daily-booking-badge badge-${badge.variant}">
+              ${bookingBadgeIconMarkup(badge.icon)}
+              ${escapeHtml(badge.label)}
+            </span>
+          </div>
+        </div>`;
+    })
+    .join("");
+
+  dailyBookingsList.innerHTML = html;
+}
+
+function syncDailyViewTabsUi() {
+  if (!dailyViewTabs || dailyViewTabs.length === 0) return;
+  dailyViewTabs.forEach((tab) => {
+    const mode = tab.dataset.dailyMode || "day";
+    const active = mode === dailyBookingsViewMode;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+  });
 }
 
 function startOfDay(date) {
@@ -746,20 +1025,45 @@ function renderHomeVisits() {
   renderHomeVisitItems(pastItems, pastHomeVisitsList);
 }
 
+function isCancelledApiBookingStatus(statusRaw) {
+  const s = String(statusRaw || "")
+    .toLowerCase()
+    .trim();
+  return s === "peruttu" || s === "cancelled" || s === "canceled";
+}
+
 function getCalendarDailyCountMaps() {
   const bookingMap = new Map();
-  bookings.filter(isEventBooking).forEach((entry) => {
+
+  bookings.filter(isActiveEventBooking).forEach((entry) => {
     if (!entry.booking_date) return;
-    const date = new Date(`${entry.booking_date}T00:00:00`);
+    const date = new Date(`${entry.booking_date}T12:00:00`);
     if (Number.isNaN(date.getTime())) return;
-    const key = formatIsoDateKey(date);
+    const key = formatIsoDateKey(startOfDay(date));
     bookingMap.set(key, (bookingMap.get(key) ?? 0) + 1);
   });
+
+  for (const ev of allEvents) {
+    for (const raw of getApiBookingsFromEvent(ev)) {
+      const norm = normalizeApiBookingRow(raw);
+      if (HIDE_TEST_API_BOOKINGS && norm.isTest) continue;
+      if (isCancelledApiBookingStatus(norm.status)) continue;
+      const instant = parseApiBookingInstant(norm.bookingDate, ev.startDate);
+      if (Number.isNaN(instant.getTime())) continue;
+      const key = formatIsoDateKey(startOfDay(instant));
+      bookingMap.set(key, (bookingMap.get(key) ?? 0) + 1);
+    }
+  }
+
   const homeMap = new Map();
   homeVisits.forEach((visit) => {
-    const date = new Date(visit.visit_time);
+    const status = String(visit.status || "").toLowerCase();
+    if (status !== "sovittu" && status !== "valmis") return;
+    const visitTs = visit.visit_time ?? visit.visit_date;
+    if (!visitTs) return;
+    const date = new Date(visitTs);
     if (Number.isNaN(date.getTime())) return;
-    const key = formatIsoDateKey(date);
+    const key = formatIsoDateKey(startOfDay(date));
     homeMap.set(key, (homeMap.get(key) ?? 0) + 1);
   });
   return { bookingMap, homeMap };
@@ -1159,6 +1463,93 @@ async function deleteNote(noteId, event) {
   }
 }
 
+function renderDrawerSlotGrid(event) {
+  if (!drawerSlotList) return;
+
+  const eventStart = new Date(event?.startDate ?? "");
+  if (Number.isNaN(eventStart.getTime())) {
+    drawerSlotList.innerHTML =
+      '<p class="drawer-slots-empty">Tapahtuman alkuaikaa ei voitu tulkita.</p>';
+    return;
+  }
+
+  const eventDayKey = formatIsoDateKey(startOfDay(eventStart));
+  const realInstants = [];
+  for (const raw of getApiBookingsFromEvent(event)) {
+    if (!isApiBookingRealOccupancy(raw)) continue;
+    const norm = normalizeApiBookingRow(raw);
+    const t = parseApiBookingInstant(norm.bookingDate, event.startDate);
+    if (Number.isNaN(t.getTime())) continue;
+    if (formatIsoDateKey(startOfDay(t)) !== eventDayKey) continue;
+    realInstants.push(t);
+  }
+
+  let rangeEndDefault = new Date(
+    eventStart.getFullYear(),
+    eventStart.getMonth(),
+    eventStart.getDate(),
+    18,
+    0,
+    0,
+    0
+  );
+  if (event.endDate) {
+    const endFromApi = new Date(event.endDate);
+    if (!Number.isNaN(endFromApi.getTime()) && endFromApi > eventStart) {
+      rangeEndDefault = endFromApi;
+    }
+  }
+  if (rangeEndDefault <= eventStart) {
+    rangeEndDefault = addMinutesToDate(eventStart, 8 * 60);
+  }
+
+  let rangeStart = floorToQuarterHour(eventStart);
+  let rangeEnd = ceilToQuarterHour(rangeEndDefault);
+
+  for (const t of realInstants) {
+    if (t < rangeStart) rangeStart = floorToQuarterHour(t);
+    const slotStart = floorToQuarterHour(t);
+    const slotEnd = addMinutesToDate(slotStart, DRAWER_SLOT_STEP_MIN);
+    if (slotEnd > rangeEnd) rangeEnd = slotEnd;
+  }
+
+  if (rangeEnd <= rangeStart) {
+    rangeEnd = addMinutesToDate(rangeStart, DRAWER_SLOT_STEP_MIN * 8);
+  }
+
+  const slotStarts = [];
+  for (
+    let cursor = new Date(rangeStart.getTime());
+    cursor < rangeEnd && slotStarts.length < DRAWER_SLOT_MAX_ROWS;
+    cursor = addMinutesToDate(cursor, DRAWER_SLOT_STEP_MIN)
+  ) {
+    slotStarts.push(new Date(cursor.getTime()));
+  }
+
+  if (slotStarts.length === 0) {
+    drawerSlotList.innerHTML = '<p class="drawer-slots-empty">Ei näytettäviä aikoja.</p>';
+    return;
+  }
+
+  drawerSlotList.innerHTML = slotStarts
+    .map((slotStart) => {
+      const slotEnd = addMinutesToDate(slotStart, DRAWER_SLOT_STEP_MIN);
+      const taken = realInstants.some((inst) => inst >= slotStart && inst < slotEnd);
+      const label = `${formatBookingTimeFi(slotStart)} - ${formatBookingTimeFi(slotEnd)}`;
+      const rowClass = taken ? "drawer-slot-row drawer-slot-row--busy" : "drawer-slot-row";
+      const badgeClass = taken
+        ? "drawer-slot-badge drawer-slot-badge--busy"
+        : "drawer-slot-badge drawer-slot-badge--free";
+      const badgeText = taken ? "EI SAATAVILLA" : "VAPAA";
+      return `
+      <div class="${rowClass}">
+        <span class="drawer-slot-time">${escapeHtml(label)}</span>
+        <span class="${badgeClass}">${badgeText}</span>
+      </div>`;
+    })
+    .join("");
+}
+
 function renderDrawer(event) {
   drawerTitle.textContent = event.title;
   drawerMeta.innerHTML = `
@@ -1179,6 +1570,7 @@ function renderDrawer(event) {
       event.remainingReal
     }</span></div>
   `;
+  renderDrawerSlotGrid(event);
   void loadNotesForEvent(event);
 }
 
@@ -1202,11 +1594,7 @@ function closeDrawer() {
 }
 
 function renderTable() {
-  const query = searchInput.value.trim().toLowerCase();
-  const filtered = allEvents.filter((event) => {
-    const text = `${event.title} ${event.location}`.toLowerCase();
-    return text.includes(query);
-  });
+  const filtered = getFilteredDashboardEvents();
 
   if (filtered.length === 0) {
     eventsBody.innerHTML = `
@@ -1214,7 +1602,17 @@ function renderTable() {
     `;
     if (toggleEventsButton) toggleEventsButton.classList.add("hidden");
     statusText.textContent = "Ei tapahtumia näytettävänä.";
+    focusedEventKeyForDaily = null;
+    renderDailyBookings();
+    syncDailyViewTabsUi();
     return;
+  }
+
+  if (
+    !focusedEventKeyForDaily ||
+    !filtered.some((e) => eventKey(e) === focusedEventKeyForDaily)
+  ) {
+    focusedEventKeyForDaily = eventKey(filtered[0]);
   }
 
   const visibleEvents = showAllEvents ? filtered : filtered.slice(0, 4);
@@ -1227,8 +1625,10 @@ function renderTable() {
       const target = Math.max(bookedReal + remainingReal, 1);
       const progressPct = Math.min((bookedReal / target) * 100, 100);
       const progressClass = getBookingColorClass(bookedReal);
+      const focusClass =
+        eventKey(event) === focusedEventKeyForDaily ? " event-progress-item--focus" : "";
       return `
-      <article class="event-progress-item" data-event-index="${index}" title="Avaa tapahtuman tiedot">
+      <article class="event-progress-item${focusClass}" data-event-index="${index}" title="Avaa tapahtuman tiedot">
         <div class="event-progress-head">
           <div>
             <p class="event-progress-location">${escapeHtml(event.location)}</p>
@@ -1267,10 +1667,16 @@ function renderTable() {
   eventsBody.querySelectorAll(".event-progress-item").forEach((item) => {
     item.addEventListener("click", () => {
       const index = Number(item.getAttribute("data-event-index"));
-      const event = filtered[index];
-      if (event) openDrawer(event);
+      const event = visibleEvents[index];
+      if (!event) return;
+      focusedEventKeyForDaily = eventKey(event);
+      openDrawer(event);
+      renderTable();
     });
   });
+
+  renderDailyBookings();
+  syncDailyViewTabsUi();
 }
 
 async function loadData() {
@@ -1278,7 +1684,7 @@ async function loadData() {
   statusText.textContent = "Päivitetään tietoja...";
 
   try {
-    const response = await fetch(API_URL, { cache: "no-store" });
+    const response = await fetch(BOOKERS_API_URL, { cache: "no-store" });
     if (!response.ok) {
       throw new Error(`HTTP virhe: ${response.status}`);
     }
@@ -1323,6 +1729,14 @@ async function loadData() {
 }
 
 searchInput.addEventListener("input", renderTable);
+
+dailyViewTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    dailyBookingsViewMode = tab.dataset.dailyMode === "week" ? "week" : "day";
+    syncDailyViewTabsUi();
+    renderDailyBookings();
+  });
+});
 if (toggleEventsButton) {
   toggleEventsButton.addEventListener("click", () => {
     showAllEvents = !showAllEvents;
@@ -1586,9 +2000,9 @@ function startDashboard() {
 
 function tryUnlockWithPin() {
   if (!pinInput || !pinError) return;
-  const entered = pinInput.value.replace(/\D/g, "").trim();
-  if (entered.length !== 4) {
-    pinError.textContent = "PIN-koodin pitää olla 4 numeroa.";
+  const entered = pinInput.value.trim();
+  if (!entered) {
+    pinError.textContent = "Anna salasana.";
     pinError.classList.remove("hidden");
     return;
   }
@@ -1626,7 +2040,6 @@ if (pinInput) {
   });
 
   pinInput.addEventListener("input", () => {
-    pinInput.value = pinInput.value.replace(/\D/g, "").slice(0, 4);
     if (pinError) pinError.classList.add("hidden");
   });
 }

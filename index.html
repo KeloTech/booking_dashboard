@@ -9,15 +9,15 @@
   <body class="pin-locked">
     <div id="pinGate" class="pin-gate" aria-modal="true" role="dialog" aria-labelledby="pinTitle">
       <div class="pin-card">
-        <h2 id="pinTitle">Anna PIN-koodi</h2>
-        <p class="pin-help">Syötä 4-numeroinen koodi jatkaaksesi.</p>
+        <h2 id="pinTitle">Anna salasana</h2>
+        <p class="pin-help">Syötä salasana jatkaaksesi.</p>
         <form id="pinForm" class="pin-form" novalidate>
-          <label for="pinInput">PIN</label>
+          <label for="pinInput">Salasana</label>
           <input
             id="pinInput"
             type="password"
-            inputmode="numeric"
-            maxlength="4"
+            inputmode="text"
+            maxlength="128"
             autocomplete="off"
             required
           />
@@ -155,6 +155,22 @@
             <button id="toggleEventsButton" type="button" class="toggle-events-button hidden">
               Katso kaikki
             </button>
+          </section>
+
+          <section class="daily-bookings-wrap card" aria-labelledby="dailyBookingsTitle">
+            <div class="daily-bookings-head">
+              <h2 id="dailyBookingsTitle" class="daily-bookings-title">Päivän varaukset</h2>
+              <div class="daily-bookings-view-toggle" role="tablist" aria-label="Näkymä">
+                <button type="button" class="daily-view-tab active" data-daily-mode="day" role="tab" aria-selected="true">
+                  Päivä
+                </button>
+                <button type="button" class="daily-view-tab" data-daily-mode="week" role="tab" aria-selected="false">
+                  Viikko
+                </button>
+              </div>
+            </div>
+            <p id="dailyBookingsContext" class="daily-bookings-context"></p>
+            <div id="dailyBookingsList" class="daily-bookings-list"></div>
           </section>
         </section>
 
@@ -312,6 +328,14 @@
       </div>
 
       <section id="drawerMeta" class="drawer-meta"></section>
+
+      <section class="drawer-slots-section" aria-labelledby="drawerSlotsTitle">
+        <h3 id="drawerSlotsTitle" class="drawer-slots-heading">Varausikkunat</h3>
+        <p class="drawer-slots-note">
+          15 minuutin välit: varattu = oikea varaus (ei dummy-/testimerkintöjä). Asiakastietoja ei näytetä.
+        </p>
+        <div id="drawerSlotList" class="drawer-slot-list"></div>
+      </section>
 
       <section class="drawer-section">
         <div class="section-header">

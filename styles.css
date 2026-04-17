@@ -702,6 +702,169 @@ button:disabled:hover {
   line-height: 1;
 }
 
+.event-progress-item--focus {
+  border-color: #c9a660;
+  box-shadow: 0 0 0 1px rgba(184, 139, 61, 0.45);
+  background: #fffaf0;
+}
+
+.daily-bookings-wrap {
+  margin-top: 0.65rem;
+  padding: 1rem 1rem 0.5rem;
+}
+
+.daily-bookings-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.35rem;
+}
+
+.daily-bookings-title {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 1.28rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+
+.daily-bookings-view-toggle {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.12rem;
+  background: #e8e1d4;
+  padding: 0.22rem;
+  border-radius: 0.5rem;
+}
+
+.daily-view-tab {
+  border: none;
+  background: transparent;
+  padding: 0.38rem 0.78rem;
+  border-radius: 0.38rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #8a8070;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.daily-view-tab.active {
+  background: var(--card);
+  color: var(--accent-strong);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.daily-bookings-context {
+  margin: 0 0 0.65rem;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.daily-bookings-list {
+  margin: 0;
+}
+
+.daily-booking-row {
+  display: grid;
+  grid-template-columns: 3.75rem minmax(0, 1fr) auto;
+  gap: 0.65rem 0.85rem;
+  align-items: center;
+  padding: 0.7rem 0.15rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.daily-booking-row:last-child {
+  border-bottom: none;
+}
+
+.daily-booking-time {
+  font-size: 0.9rem;
+  color: #7a7163;
+  font-variant-numeric: tabular-nums;
+}
+
+.daily-booking-main {
+  min-width: 0;
+}
+
+.daily-booking-name {
+  margin: 0;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #2a2418;
+  line-height: 1.25;
+}
+
+.daily-booking-name.is-done {
+  text-decoration: line-through;
+  color: #918878;
+  font-weight: 600;
+}
+
+.daily-booking-sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.3;
+}
+
+.daily-booking-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.daily-badge-icon {
+  font-size: 0.78rem;
+  line-height: 1;
+  opacity: 0.85;
+}
+
+.badge-done {
+  background: #e5e1d9;
+  color: #4d4740;
+}
+
+.badge-confirmed {
+  background: #ebe6de;
+  color: #5e574d;
+}
+
+.badge-pending {
+  background: #f3e6c4;
+  color: #8f6824;
+}
+
+.badge-tentative {
+  background: #e8e4dc;
+  color: #5c564d;
+}
+
+.badge-cancelled {
+  background: #f0dede;
+  color: #7a3d3d;
+}
+
+.badge-neutral {
+  background: #e8e4dc;
+  color: #5c564d;
+}
+
+.empty-daily-bookings {
+  padding: 0.85rem 0.15rem 0.35rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .table-wrap {
   background: var(--card);
   border: 1px solid var(--line);
@@ -824,6 +987,88 @@ tbody tr:hover {
   background: #fafcff;
   display: grid;
   gap: 0.4rem;
+}
+
+.drawer-slots-section {
+  margin-top: 1rem;
+}
+
+.drawer-slots-heading {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.drawer-slots-note {
+  margin: 0.35rem 0 0.65rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.drawer-slot-list {
+  display: grid;
+  gap: 0.45rem;
+  max-height: min(48vh, 380px);
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.drawer-slots-empty {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.drawer-slot-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #d4cdc0;
+  border-radius: 0.55rem;
+  background: #fffdf8;
+}
+
+.drawer-slot-row--busy {
+  border-color: #e0dcd4;
+  background: #f5f3ef;
+}
+
+.drawer-slot-time {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #2a2418;
+  font-variant-numeric: tabular-nums;
+}
+
+.drawer-slot-row--busy .drawer-slot-time {
+  color: #a39a8c;
+  font-weight: 500;
+}
+
+.drawer-slot-badge {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 0.28rem 0.5rem;
+  border-radius: 0.35rem;
+  border: 1px solid transparent;
+}
+
+.drawer-slot-badge--free {
+  color: #1e293b;
+  background: #fff;
+  border-color: #94a3b8;
+}
+
+.drawer-slot-badge--busy {
+  color: #a8a29e;
+  background: #f0ebe4;
+  border-color: #e7e2db;
 }
 
 .meta-row {
