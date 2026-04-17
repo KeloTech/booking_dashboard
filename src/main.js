@@ -223,6 +223,18 @@ function getApiBookingsFromEvent(event) {
   return Array.isArray(raw) ? raw : [];
 }
 
+/** API voi lähettää isTest merkkijonona "false" — Boolean("false") olisi virheellisesti true */
+function parseApiBooleanFlag(value) {
+  if (value === true || value === 1) return true;
+  if (value === false || value === 0 || value === null || value === undefined) return false;
+  if (typeof value === "string") {
+    const s = value.toLowerCase().trim();
+    if (s === "true" || s === "1" || s === "yes") return true;
+    return false;
+  }
+  return Boolean(value);
+}
+
 function normalizeApiBookingRow(raw) {
   const first = String(raw.firstName ?? raw.first_name ?? "").trim();
   const last = String(raw.lastName ?? raw.last_name ?? "").trim();
@@ -231,15 +243,24 @@ function normalizeApiBookingRow(raw) {
     String(raw.name ?? raw.customer_name ?? "")
       .trim() || fromParts;
   const orderName = String(raw.orderName ?? raw.order_name ?? "").trim();
+  const bookingDateRaw =
+    raw.bookingDate ??
+    raw.booking_date ??
+    raw.startTime ??
+    raw.slotStart ??
+    raw.startDateTime ??
+    raw.dateTime ??
+    raw.datetime ??
+    "";
   return {
-    bookingDate: raw.bookingDate ?? raw.booking_date ?? "",
+    bookingDate: bookingDateRaw,
     name,
     firstName: first,
     lastName: last,
     phone: String(raw.phone ?? "").trim(),
     email: String(raw.email ?? "").trim(),
     status: raw.status ?? "",
-    isTest: Boolean(raw.isTest ?? raw.is_test),
+    isTest: parseApiBooleanFlag(raw.isTest ?? raw.is_test),
     orderName,
     service: String(
       raw.service ??
@@ -304,8 +325,26 @@ function ceilToQuarterHour(d) {
 }
 
 function parseApiBookingInstant(bookingDateRaw, fallbackEventStart) {
-  if (!bookingDateRaw) return new Date(fallbackEventStart);
+  if (bookingDateRaw === null || bookingDateRaw === undefined || bookingDateRaw === "") {
+    return new Date(fallbackEventStart);
+  }
+  if (typeof bookingDateRaw === "number" && Number.isFinite(bookingDateRaw)) {
+    const ms = bookingDateRaw < 1e12 ? bookingDateRaw * 1000 : bookingDateRaw;
+    return new Date(ms);
+  }
+  if (typeof bookingDateRaw === "object" && bookingDateRaw !== null) {
+    const sec = Number(
+      bookingDateRaw.seconds ?? bookingDateRaw._seconds ?? bookingDateRaw.sec
+    );
+    if (Number.isFinite(sec)) return new Date(sec * 1000);
+  }
   const str = String(bookingDateRaw).trim();
+  if (/^\d{10,13}$/.test(str)) {
+    const n = Number(str);
+    const ms = n < 1e12 ? n * 1000 : n;
+    const d = new Date(ms);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
   const direct = new Date(str);
   if (!Number.isNaN(direct.getTime())) return direct;
   if (/^\d{1,2}:\d{2}$/.test(str)) {
@@ -315,6 +354,21 @@ function parseApiBookingInstant(bookingDateRaw, fallbackEventStart) {
     return base;
   }
   return new Date(fallbackEventStart);
+}
+
+/** Aseta varauksen kellonaika tapahtuman paikalliselle kalenteripäivälle (UTC-ISO voi siirtää päivää) */
+function alignBookingInstantToEventDay(inst, eventStartRaw) {
+  const ev = new Date(eventStartRaw ?? "");
+  if (Number.isNaN(inst.getTime()) || Number.isNaN(ev.getTime())) return inst;
+  return new Date(
+    ev.getFullYear(),
+    ev.getMonth(),
+    ev.getDate(),
+    inst.getHours(),
+    inst.getMinutes(),
+    inst.getSeconds(),
+    inst.getMilliseconds()
+  );
 }
 
 function formatBookingTimeFi(instant) {
@@ -1527,14 +1581,13 @@ function renderDrawerSlotGrid(event) {
     return;
   }
 
-  const eventDayKey = formatIsoDateKey(startOfDay(eventStart));
   const realInstants = [];
   for (const raw of getApiBookingsFromEvent(event)) {
     if (!isApiBookingRealOccupancy(raw)) continue;
     const norm = normalizeApiBookingRow(raw);
-    const t = parseApiBookingInstant(norm.bookingDate, event.startDate);
+    let t = parseApiBookingInstant(norm.bookingDate, event.startDate);
     if (Number.isNaN(t.getTime())) continue;
-    if (formatIsoDateKey(startOfDay(t)) !== eventDayKey) continue;
+    t = alignBookingInstantToEventDay(t, event.startDate);
     realInstants.push(t);
   }
 
