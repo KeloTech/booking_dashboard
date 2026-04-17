@@ -242,7 +242,8 @@ function isApiBookingRealOccupancy(raw) {
 }
 
 const DRAWER_SLOT_STEP_MIN = 15;
-const DRAWER_SLOT_MAX_ROWS = 64;
+/** Koko päivän 15 min slotit mahtuvat (esim. 10–18 ≈ 32 riviä) */
+const DRAWER_SLOT_MAX_ROWS = 128;
 
 function addMinutesToDate(d, mins) {
   const x = new Date(d.getTime());
@@ -625,6 +626,14 @@ function getEventLocationLabel(entry) {
   if (!raw) return "Ei tapahtumaa";
   if (raw.includes(" - ")) return raw.split(" - ").at(-1)?.trim() || raw;
   return raw;
+}
+
+/** Historia-rivi: älä näytä toistuvaa tapahtumatyyppi-etuliitettä */
+function stripHistoryEventNamePrefix(raw) {
+  return String(raw || "")
+    .trim()
+    .replace(/^\s*kultamyyntitapahtuma\s*-\s*/i, "")
+    .trim();
 }
 
 function populateTimeOptions(selectElement) {
@@ -1043,15 +1052,16 @@ function getCalendarDailyCountMaps() {
     bookingMap.set(key, (bookingMap.get(key) ?? 0) + 1);
   });
 
+  /* API: yksi tapahtuma = yksi päivä — lasketaan tapahtuman paikalliseen päivään, ei bookingDate-ISO:n
+   * UTC-käännökseen (muuten luvut voivat siirtyä väärälle kuukausisolulle). */
   for (const ev of allEvents) {
+    const eventStart = new Date(ev.startDate ?? "");
+    if (Number.isNaN(eventStart.getTime())) continue;
+    const eventDayKey = formatIsoDateKey(startOfDay(eventStart));
+
     for (const raw of getApiBookingsFromEvent(ev)) {
-      const norm = normalizeApiBookingRow(raw);
-      if (HIDE_TEST_API_BOOKINGS && norm.isTest) continue;
-      if (isCancelledApiBookingStatus(norm.status)) continue;
-      const instant = parseApiBookingInstant(norm.bookingDate, ev.startDate);
-      if (Number.isNaN(instant.getTime())) continue;
-      const key = formatIsoDateKey(startOfDay(instant));
-      bookingMap.set(key, (bookingMap.get(key) ?? 0) + 1);
+      if (!isApiBookingRealOccupancy(raw)) continue;
+      bookingMap.set(eventDayKey, (bookingMap.get(eventDayKey) ?? 0) + 1);
     }
   }
 
@@ -1390,6 +1400,7 @@ function renderHistory() {
   historyList.innerHTML = sorted
     .slice(0, 10)
     .map((entry) => {
+      const eventLine = stripHistoryEventNamePrefix(entry.event_name) || "Ei tapahtumaa";
       return `
       <article class="history-item">
         <div class="history-top">
@@ -1397,7 +1408,7 @@ function renderHistory() {
           <span class="history-date">${formatDateOnly(entry.booking_date)}</span>
         </div>
         <p class="history-comment">
-          ${escapeHtml(entry.event_name || "Ei tapahtumaa")} - ${escapeHtml(
+          ${escapeHtml(eventLine)} - ${escapeHtml(
         entry.booking_time || "--:--"
       )} - ${getStatusLabel(entry.status)}
         </p>
@@ -1484,18 +1495,24 @@ function renderDrawerSlotGrid(event) {
     realInstants.push(t);
   }
 
+  /* Vähintään klo 19 sama päivä tai alkuaika + 8 h — älä koskaan käytä lyhyttä API endDate -arvoa,
+   * joka typistää listan yhteen slottiin (backend voi lähettää esim. ensimmäisen slotin lopun). */
   let rangeEndDefault = new Date(
     eventStart.getFullYear(),
     eventStart.getMonth(),
     eventStart.getDate(),
-    18,
+    19,
     0,
     0,
     0
   );
+  const startPlus8h = addMinutesToDate(eventStart, 8 * 60);
+  if (startPlus8h > rangeEndDefault) {
+    rangeEndDefault = startPlus8h;
+  }
   if (event.endDate) {
     const endFromApi = new Date(event.endDate);
-    if (!Number.isNaN(endFromApi.getTime()) && endFromApi > eventStart) {
+    if (!Number.isNaN(endFromApi.getTime()) && endFromApi > rangeEndDefault) {
       rangeEndDefault = endFromApi;
     }
   }
@@ -1624,6 +1641,7 @@ function renderTable() {
       const remainingReal = Number(event.remainingReal) || 0;
       const target = Math.max(bookedReal + remainingReal, 1);
       const progressPct = Math.min((bookedReal / target) * 100, 100);
+      const goalMarkPct = Math.min(100, Math.max(0, (TODAY_TARGET / target) * 100));
       const progressClass = getBookingColorClass(bookedReal);
       const focusClass =
         eventKey(event) === focusedEventKeyForDaily ? " event-progress-item--focus" : "";
@@ -1636,8 +1654,9 @@ function renderTable() {
           </div>
           <p class="event-progress-value"><span>${bookedReal}</span> / ${target}</p>
         </div>
-        <div class="event-progress-bar" role="img" aria-label="Oikeat varaukset ${bookedReal} / ${target}">
+        <div class="event-progress-bar" role="img" aria-label="Oikeat varaukset ${bookedReal} / ${target}, päivätavoite 12 merkitty katkoviivalla">
           <div class="event-progress-fill ${progressClass}" style="width: ${progressPct.toFixed(1)}%"></div>
+          <span class="event-progress-goal-marker" style="left: ${goalMarkPct.toFixed(2)}%;" title="12 varauksen päivätavoite"></span>
           <span class="event-progress-target">Tavoite ${target}</span>
         </div>
         <div class="event-progress-meta">
