@@ -693,9 +693,7 @@ function renderDailyBookings() {
       }));
     if (query) {
       rows = rows.filter(({ visit }) => {
-        const hay = `${visit.customer_name ?? ""} ${visit.nickname ?? ""} ${visit.address ?? ""} ${
-          visit.phone ?? ""
-        } ${visit.details ?? ""}`
+        const hay = `${visit.customer_name ?? ""} ${visit.nickname ?? ""} ${visit.details ?? ""}`
           .toLowerCase()
           .trim();
         return hay.includes(query);
@@ -734,17 +732,13 @@ function renderDailyBookings() {
         const visit = row.visit;
         const timeStr = formatBookingTimeFi(row.instant);
         const customer = String(visit.customer_name || visit.nickname || "Kotikäynti").trim();
-        const phone = String(visit.phone || "").trim() || "-";
-        const address = String(visit.address || "").trim();
         const extra = isWeek ? `${formatDateOnly(row.instant)} · Kotikäynti` : "Kotikäynti";
-        const subLine = [extra, address].filter(Boolean).join(" · ");
         return `
         <div class="daily-booking-row daily-booking-row--home">
           <div class="daily-booking-time">${escapeHtml(timeStr)}</div>
           <div class="daily-booking-main">
             <p class="daily-booking-name">${escapeHtml(customer)}</p>
-            <p class="daily-booking-sub">${escapeHtml(subLine)}</p>
-            <p class="daily-booking-phone">Puh. ${escapeHtml(phone)}</p>
+            <p class="daily-booking-sub">${escapeHtml(extra)}</p>
           </div>
         </div>`;
       }
@@ -977,8 +971,17 @@ function normalizeOwnerName(value) {
   return String(value || "").trim();
 }
 
+/** Estää tyhjän tai valintatekstin tallentumisen profiiliksi (vanhat virheelliset rivit suodatetaan pois). */
+function isReservedOwnerProfileLabel(name) {
+  const n = normalizeOwnerName(name).toLowerCase();
+  if (!n) return true;
+  return n === "valitse tekijä";
+}
+
 function getKnownOwnerNames() {
-  const names = bookingOwnerProfiles.map((item) => normalizeOwnerName(item.name)).filter(Boolean);
+  const names = bookingOwnerProfiles
+    .map((item) => normalizeOwnerName(item.name))
+    .filter((n) => n && !isReservedOwnerProfileLabel(n));
   return [...new Set(names)].sort((a, b) => a.localeCompare(b, "fi"));
 }
 
@@ -1013,10 +1016,20 @@ function renderBookingOwnerOptions(preferredOwner = "", preferredHomeOwner = "")
   syncOwnerProfileActionState(hvNickname, deleteHomeVisitProfileButton);
 }
 
+function sanitizeBookingOwnerProfilesList(entries) {
+  return (Array.isArray(entries) ? entries : [])
+    .map((row) => ({
+      id: String(row.id || ""),
+      name: normalizeOwnerName(row.name),
+    }))
+    .filter((row) => row.name && !isReservedOwnerProfileLabel(row.name));
+}
+
 async function loadBookingOwnerProfiles() {
   const client = getSupabase();
   if (!client) {
-    bookingOwnerProfiles = getLocalBookingOwnerProfiles();
+    bookingOwnerProfiles = sanitizeBookingOwnerProfilesList(getLocalBookingOwnerProfiles());
+    setLocalBookingOwnerProfiles(bookingOwnerProfiles);
     renderBookingOwnerOptions();
     return;
   }
@@ -1025,16 +1038,12 @@ async function loadBookingOwnerProfiles() {
     .select("id, name")
     .order("name", { ascending: true });
   if (error) {
-    bookingOwnerProfiles = getLocalBookingOwnerProfiles();
+    bookingOwnerProfiles = sanitizeBookingOwnerProfilesList(getLocalBookingOwnerProfiles());
+    setLocalBookingOwnerProfiles(bookingOwnerProfiles);
     renderBookingOwnerOptions();
     return;
   }
-  bookingOwnerProfiles = (data ?? [])
-    .map((row) => ({
-      id: String(row.id || ""),
-      name: normalizeOwnerName(row.name),
-    }))
-    .filter((row) => row.name);
+  bookingOwnerProfiles = sanitizeBookingOwnerProfilesList(data ?? []);
   setLocalBookingOwnerProfiles(bookingOwnerProfiles);
   renderBookingOwnerOptions();
 }
@@ -1042,6 +1051,9 @@ async function loadBookingOwnerProfiles() {
 async function createBookingOwnerProfile(nameRaw) {
   const name = normalizeOwnerName(nameRaw);
   if (!name) return { ok: false, message: "Nimi puuttuu." };
+  if (isReservedOwnerProfileLabel(name)) {
+    return { ok: false, message: "Valitse jokin muu profiilin nimi." };
+  }
   const duplicateExists = getKnownOwnerNames().some(
     (candidate) => candidate.toLowerCase() === name.toLowerCase()
   );
@@ -1650,7 +1662,6 @@ function renderHomeVisitItems(items, container) {
       const status = item.status || "sovittu";
       const nicknameText = item.nickname?.trim();
       const timeLabel = formatDateTime(item.visit_time);
-      const phoneLabel = item.phone?.trim() ? item.phone : "-";
       return `
         <article class="home-visit-item">
           <div class="home-visit-head">
@@ -1667,8 +1678,6 @@ function renderHomeVisitItems(items, container) {
               </h4>
               <p class="home-visit-meta-line">
                 <span><strong>Aika:</strong> ${escapeHtml(timeLabel)}</span>
-                <span><strong>Osoite:</strong> ${escapeHtml(item.address)}</span>
-                <span><strong>Puhelin:</strong> ${escapeHtml(phoneLabel)}</span>
               </p>
               <p class="home-visit-note">${escapeHtml(item.details)}</p>
             </div>
@@ -1778,17 +1787,13 @@ function renderHomeVisitsPageDailyList() {
       const visit = row.visit;
       const timeStr = formatBookingTimeFi(row.instant);
       const customer = String(visit.customer_name || visit.nickname || "Kotikäynti").trim();
-      const phone = String(visit.phone || "").trim() || "-";
-      const address = String(visit.address || "").trim();
       const extra = isWeek ? `${formatDateOnly(row.instant)} · Kotikäynti` : "Kotikäynti";
-      const subLine = [extra, address].filter(Boolean).join(" · ");
       return `
         <div class="daily-booking-row daily-booking-row--home">
           <div class="daily-booking-time">${escapeHtml(timeStr)}</div>
           <div class="daily-booking-main">
             <p class="daily-booking-name">${escapeHtml(customer)}</p>
-            <p class="daily-booking-sub">${escapeHtml(subLine)}</p>
-            <p class="daily-booking-phone">Puh. ${escapeHtml(phone)}</p>
+            <p class="daily-booking-sub">${escapeHtml(extra)}</p>
           </div>
         </div>`;
     })
@@ -2799,7 +2804,6 @@ if (bookingForm) {
     const payload = {
       customer_name: customerName,
       phone,
-      email: email || null,
       booking_type: type,
       booking_date: date,
       booking_time: selectedTime,
@@ -2808,6 +2812,9 @@ if (bookingForm) {
       status,
       owner,
     };
+    if (email) {
+      payload.email = email;
+    }
     const result = editingBookingId
       ? await updateBooking(editingBookingId, payload)
       : await saveBooking(payload);
