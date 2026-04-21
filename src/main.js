@@ -18,6 +18,7 @@ const CHART_START_HOUR = 7;
 const CHART_END_HOUR = 23;
 const HOME_VISITS_STORAGE_KEY = "localHomeVisits";
 const BOOKINGS_STORAGE_KEY = "localBookings";
+const BOOKING_OWNER_PROFILES_STORAGE_KEY = "localBookingOwnerProfiles";
 
 /* Netlify / .env: SUPABASE_URL, SUPABASE_ANON_KEY (vite.config: envPrefix SUPABASE_) */
 const supabaseUrl = import.meta.env.SUPABASE_URL ?? "";
@@ -59,6 +60,8 @@ const toggleHomeVisitFormButton = document.getElementById("toggleHomeVisitFormBu
 const homeVisitForm = document.getElementById("homeVisitForm");
 const hvCustomerName = document.getElementById("hvCustomerName");
 const hvNickname = document.getElementById("hvNickname");
+const addHomeVisitProfileButton = document.getElementById("addHomeVisitProfileButton");
+const deleteHomeVisitProfileButton = document.getElementById("deleteHomeVisitProfileButton");
 const hvPhone = document.getElementById("hvPhone");
 const hvAddress = document.getElementById("hvAddress");
 const hvVisitDate = document.getElementById("hvVisitDate");
@@ -77,6 +80,8 @@ const bookingDate = document.getElementById("bookingDate");
 const bookingTime = document.getElementById("bookingTime");
 const bookingEventSelect = document.getElementById("bookingEventSelect");
 const bookingOwner = document.getElementById("bookingOwner");
+const addBookingOwnerProfileButton = document.getElementById("addBookingOwnerProfileButton");
+const deleteBookingOwnerProfileButton = document.getElementById("deleteBookingOwnerProfileButton");
 const bookingStatus = document.getElementById("bookingStatus");
 const deleteBookingButton = document.getElementById("deleteBookingButton");
 const saveBookingButton = document.getElementById("saveBookingButton");
@@ -115,6 +120,7 @@ const pinError = document.getElementById("pinError");
 const pinSubmitButton = document.getElementById("pinSubmitButton");
 const dailyBookingsList = document.getElementById("dailyBookingsList");
 const dailyBookingsContext = document.getElementById("dailyBookingsContext");
+const dailyEventSwitch = document.getElementById("dailyEventSwitch");
 const dailyViewTabs = document.querySelectorAll(".daily-view-tab[data-daily-mode]");
 
 let allEvents = [];
@@ -130,6 +136,7 @@ let activeView = "dashboard";
 let calendarMode = "all";
 let calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let bookings = [];
+let bookingOwnerProfiles = [];
 let editingBookingId = null;
 let showAllEvents = false;
 /** Päänäkymän "Päivän varaukset" -osion tapahtuma (eventKey) */
@@ -252,8 +259,12 @@ function normalizeApiBookingRow(raw) {
     raw.dateTime ??
     raw.datetime ??
     "";
+  const bookingStartRaw = raw.startDate ?? raw.start_date ?? "";
+  const bookingEndRaw = raw.endDate ?? raw.end_date ?? "";
   return {
     bookingDate: bookingDateRaw,
+    startDate: bookingStartRaw,
+    endDate: bookingEndRaw,
     name,
     firstName: first,
     lastName: last,
@@ -296,6 +307,8 @@ function isApiBookingRealOccupancy(raw) {
 const DRAWER_SLOT_STEP_MIN = 15;
 /** Koko päivän 15 min slotit mahtuvat (esim. 10–18 ≈ 32 riviä) */
 const DRAWER_SLOT_MAX_ROWS = 128;
+const DRAWER_VISIBLE_START_HOUR = 10;
+const DRAWER_VISIBLE_END_HOUR = 19;
 
 function addMinutesToDate(d, mins) {
   const x = new Date(d.getTime());
@@ -436,12 +449,7 @@ function bookingBadgeIconMarkup(icon) {
 
 function buildBookingSubtitle(norm, eventRow, isWeek) {
   let line = "";
-  if (norm.orderName) line = norm.orderName;
-  else if (norm.service) line = norm.service;
-  else {
-    const contact = [norm.phone, norm.email].filter(Boolean).join(" · ");
-    line = contact;
-  }
+  if (norm.service) line = norm.service;
   if (isWeek) {
     const loc = String(eventRow.location ?? "").trim();
     const day = formatDateOnly(eventRow.startDate);
@@ -453,6 +461,49 @@ function buildBookingSubtitle(norm, eventRow, isWeek) {
   return escapeHtml(line);
 }
 
+function renderDailyEventSwitch(focusEvent, events, isWeek) {
+  if (!dailyEventSwitch) return;
+  if (isWeek) {
+    dailyEventSwitch.innerHTML = "";
+    return;
+  }
+  const focusDate = new Date(focusEvent?.startDate ?? "");
+  if (Number.isNaN(focusDate.getTime())) {
+    dailyEventSwitch.innerHTML = "";
+    return;
+  }
+  const focusKey = formatIsoDateKey(startOfDay(focusDate));
+  const dayEvents = events
+    .filter((ev) => {
+      const d = new Date(ev.startDate ?? "");
+      if (Number.isNaN(d.getTime())) return false;
+      return formatIsoDateKey(startOfDay(d)) === focusKey;
+    })
+    .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+  if (dayEvents.length <= 1) {
+    dailyEventSwitch.innerHTML = "";
+    return;
+  }
+  dailyEventSwitch.innerHTML = dayEvents
+    .map((ev) => {
+      const key = eventKey(ev);
+      const active = key === focusedEventKeyForDaily;
+      const label = `${formatBookingTimeFi(new Date(ev.startDate))} · ${String(ev.location ?? "").trim() || "Tapahtuma"}`;
+      return `<button type="button" class="daily-event-switch-btn${active ? " active" : ""}" data-daily-event-key="${escapeHtml(
+        key
+      )}" aria-pressed="${active ? "true" : "false"}">${escapeHtml(label)}</button>`;
+    })
+    .join("");
+  dailyEventSwitch.querySelectorAll("[data-daily-event-key]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.getAttribute("data-daily-event-key");
+      if (!key || key === focusedEventKeyForDaily) return;
+      focusedEventKeyForDaily = key;
+      renderDailyBookings();
+    });
+  });
+}
+
 function renderDailyBookings() {
   if (!dailyBookingsList) return;
 
@@ -460,6 +511,7 @@ function renderDailyBookings() {
   if (filtered.length === 0) {
     dailyBookingsList.innerHTML = `<div class="empty-daily-bookings">Ei tapahtumia — varauslistaa ei näytetä.</div>`;
     if (dailyBookingsContext) dailyBookingsContext.textContent = "";
+    if (dailyEventSwitch) dailyEventSwitch.innerHTML = "";
     return;
   }
 
@@ -473,6 +525,7 @@ function renderDailyBookings() {
   const focusEvent =
     filtered.find((e) => eventKey(e) === focusedEventKeyForDaily) ?? filtered[0];
   const isWeek = dailyBookingsViewMode === "week";
+  renderDailyEventSwitch(focusEvent, filtered, isWeek);
 
   const query = searchInput.value.trim().toLowerCase();
   let rows = [];
@@ -500,15 +553,47 @@ function renderDailyBookings() {
     .map(({ raw, event }) => {
       const norm = normalizeApiBookingRow(raw);
       if (HIDE_TEST_API_BOOKINGS && norm.isTest) return null;
-      const instant = parseApiBookingInstant(norm.bookingDate, event.startDate);
-      return { norm, event, instant };
+      const sourceStart = norm.startDate || norm.bookingDate;
+      let instant = parseApiBookingInstant(sourceStart, event.startDate);
+      if (Number.isNaN(instant.getTime())) return null;
+      instant = alignBookingInstantToEventDay(instant, event.startDate);
+      return { kind: "booking", norm, event, instant };
     })
     .filter(Boolean);
+
+  const focusDay = startOfDay(new Date(focusEvent.startDate));
+  const rangeStart = isWeek
+    ? new Date(
+        focusDay.getFullYear(),
+        focusDay.getMonth(),
+        focusDay.getDate() - ((focusDay.getDay() + 6) % 7)
+      )
+    : focusDay;
+  const rangeEnd = new Date(rangeStart);
+  rangeEnd.setDate(rangeStart.getDate() + (isWeek ? 7 : 1));
+  const homeRows = homeVisits
+    .filter((visit) => {
+      const status = String(visit.status || "").toLowerCase();
+      if (status !== "sovittu" && status !== "valmis") return false;
+      const ts = visit.visit_time ?? visit.visit_date;
+      if (!ts) return false;
+      const visitTime = new Date(ts);
+      if (Number.isNaN(visitTime.getTime())) return false;
+      return visitTime >= rangeStart && visitTime < rangeEnd;
+    })
+    .map((visit) => ({
+      kind: "home",
+      visit,
+      instant: new Date(visit.visit_time ?? visit.visit_date),
+    }));
+  rows = [...rows, ...homeRows];
 
   rows.sort((a, b) => {
     const dt = a.instant.getTime() - b.instant.getTime();
     if (dt !== 0) return dt;
-    return new Date(a.event.startDate).getTime() - new Date(b.event.startDate).getTime();
+    const aEventStart = a.event ? new Date(a.event.startDate).getTime() : 0;
+    const bEventStart = b.event ? new Date(b.event.startDate).getTime() : 0;
+    return aEventStart - bEventStart;
   });
 
   if (dailyBookingsContext) {
@@ -524,23 +609,36 @@ function renderDailyBookings() {
   }
 
   const html = rows
-    .map(({ norm, event, instant }) => {
-      const badge = mapApiBookingStatusBadge(norm.status);
+    .map((row) => {
+      if (row.kind === "home") {
+        const visit = row.visit;
+        const timeStr = formatBookingTimeFi(row.instant);
+        const customer = String(visit.customer_name || visit.nickname || "Kotikäynti").trim();
+        const phone = String(visit.phone || "").trim() || "-";
+        const address = String(visit.address || "").trim();
+        const extra = isWeek ? `${formatDateOnly(row.instant)} · Kotikäynti` : "Kotikäynti";
+        const subLine = [extra, address].filter(Boolean).join(" · ");
+        return `
+        <div class="daily-booking-row daily-booking-row--home">
+          <div class="daily-booking-time">${escapeHtml(timeStr)}</div>
+          <div class="daily-booking-main">
+            <p class="daily-booking-name">${escapeHtml(customer)}</p>
+            <p class="daily-booking-sub">${escapeHtml(subLine)}</p>
+            <p class="daily-booking-phone">Puhelin: ${escapeHtml(phone)}</p>
+          </div>
+        </div>`;
+      }
+      const { norm, event, instant } = row;
       const timeStr = formatBookingTimeFi(instant);
       const sub = buildBookingSubtitle(norm, event, isWeek);
-      const nameClass = badge.strikeName ? "daily-booking-name is-done" : "daily-booking-name";
+      const phone = String(norm.phone || "").trim() || "-";
       return `
         <div class="daily-booking-row">
           <div class="daily-booking-time">${escapeHtml(timeStr)}</div>
           <div class="daily-booking-main">
-            <p class="${nameClass}">${escapeHtml(norm.name || "—")}</p>
+            <p class="daily-booking-name">${escapeHtml(norm.name || "—")}</p>
             <p class="daily-booking-sub">${sub}</p>
-          </div>
-          <div>
-            <span class="daily-booking-badge badge-${badge.variant}">
-              ${bookingBadgeIconMarkup(badge.icon)}
-              ${escapeHtml(badge.label)}
-            </span>
+            <p class="daily-booking-phone">Puhelin: ${escapeHtml(phone)}</p>
           </div>
         </div>`;
     })
@@ -612,6 +710,38 @@ function isEventBooking(entry) {
 function isActiveEventBooking(entry) {
   const status = String(entry.status || "").toLowerCase();
   return isEventBooking(entry) && status !== "peruttu";
+}
+
+function getManualActiveEventBookingCountByKey(bookingsList = bookings) {
+  const map = new Map();
+  bookingsList.forEach((entry) => {
+    if (!isActiveEventBooking(entry)) return;
+    const key = String(entry.event_key || "").trim();
+    if (!key) return;
+    map.set(key, (map.get(key) ?? 0) + 1);
+  });
+  return map;
+}
+
+function getDashboardEventMetrics(event, manualCountMap = null) {
+  const manualMap = manualCountMap ?? getManualActiveEventBookingCountByKey();
+  const manualCount = manualMap.get(eventKey(event)) ?? 0;
+  const apiBookedReal = Number(event.bookedReal) || 0;
+  const apiBookedTotal = Number(event.bookedTotal) || 0;
+  const bookedFake = Number(event.bookedFake) || 0;
+  const apiRemainingReal = Number(event.remainingReal) || 0;
+  const target = Math.max(apiBookedReal + apiRemainingReal, 1);
+  const bookedReal = apiBookedReal + manualCount;
+  const bookedTotal = apiBookedTotal + manualCount;
+  const remainingReal = Math.max(0, apiRemainingReal - manualCount);
+  return {
+    bookedReal,
+    bookedTotal,
+    bookedFake,
+    remainingReal,
+    target,
+    manualCount,
+  };
 }
 
 function getCurrentStreak(dayCountMap) {
@@ -686,22 +816,198 @@ function setLocalBookings(entries) {
   localStorage.setItem(BOOKINGS_STORAGE_KEY, JSON.stringify(entries));
 }
 
+function getLocalBookingOwnerProfiles() {
+  try {
+    const raw = localStorage.getItem(BOOKING_OWNER_PROFILES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function setLocalBookingOwnerProfiles(entries) {
+  localStorage.setItem(BOOKING_OWNER_PROFILES_STORAGE_KEY, JSON.stringify(entries));
+}
+
+function normalizeOwnerName(value) {
+  return String(value || "").trim();
+}
+
+function getKnownOwnerNames() {
+  const names = bookingOwnerProfiles.map((item) => normalizeOwnerName(item.name)).filter(Boolean);
+  return [...new Set(names)].sort((a, b) => a.localeCompare(b, "fi"));
+}
+
+function syncOwnerProfileActionState(selectElement, deleteButton) {
+  if (!selectElement || !deleteButton) return;
+  deleteButton.disabled = !normalizeOwnerName(selectElement.value);
+}
+
+function renderOwnerProfileSelect(selectElement, preferredOwner = "", placeholder = "Valitse tekijä") {
+  if (!selectElement) return;
+  const current = normalizeOwnerName(preferredOwner || selectElement.value);
+  const names = getKnownOwnerNames();
+  const hasCurrentOutsideProfiles = current && !names.includes(current);
+  selectElement.innerHTML = [
+    `<option value="">${escapeHtml(placeholder)}</option>`,
+    ...(hasCurrentOutsideProfiles
+      ? [`<option value="${escapeHtml(current)}">${escapeHtml(current)} (ei profiilia)</option>`]
+      : []),
+    ...names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`),
+  ].join("");
+  if (current && names.includes(current)) {
+    selectElement.value = current;
+  } else if (names.length === 1) {
+    selectElement.value = names[0];
+  }
+}
+
+function renderBookingOwnerOptions(preferredOwner = "", preferredHomeOwner = "") {
+  renderOwnerProfileSelect(bookingOwner, preferredOwner, "Valitse tekijä");
+  renderOwnerProfileSelect(hvNickname, preferredHomeOwner, "Valitse tekijä");
+  syncOwnerProfileActionState(bookingOwner, deleteBookingOwnerProfileButton);
+  syncOwnerProfileActionState(hvNickname, deleteHomeVisitProfileButton);
+}
+
+async function loadBookingOwnerProfiles() {
+  const client = getSupabase();
+  if (!client) {
+    bookingOwnerProfiles = getLocalBookingOwnerProfiles();
+    renderBookingOwnerOptions();
+    return;
+  }
+  const { data, error } = await client
+    .from("booking_profiles")
+    .select("id, name")
+    .order("name", { ascending: true });
+  if (error) {
+    bookingOwnerProfiles = getLocalBookingOwnerProfiles();
+    renderBookingOwnerOptions();
+    return;
+  }
+  bookingOwnerProfiles = (data ?? [])
+    .map((row) => ({
+      id: String(row.id || ""),
+      name: normalizeOwnerName(row.name),
+    }))
+    .filter((row) => row.name);
+  setLocalBookingOwnerProfiles(bookingOwnerProfiles);
+  renderBookingOwnerOptions();
+}
+
+async function createBookingOwnerProfile(nameRaw) {
+  const name = normalizeOwnerName(nameRaw);
+  if (!name) return { ok: false, message: "Nimi puuttuu." };
+  const duplicateExists = getKnownOwnerNames().some(
+    (candidate) => candidate.toLowerCase() === name.toLowerCase()
+  );
+  if (duplicateExists) {
+    renderBookingOwnerOptions(name);
+    return { ok: true };
+  }
+
+  const client = getSupabase();
+  if (!client) {
+    bookingOwnerProfiles = [...bookingOwnerProfiles, { id: crypto.randomUUID(), name }];
+    setLocalBookingOwnerProfiles(bookingOwnerProfiles);
+    renderBookingOwnerOptions(name);
+    return { ok: true };
+  }
+
+  const { data, error } = await client
+    .from("booking_profiles")
+    .insert({ name })
+    .select("id, name")
+    .single();
+
+  if (error) {
+    bookingOwnerProfiles = [...bookingOwnerProfiles, { id: crypto.randomUUID(), name }];
+    setLocalBookingOwnerProfiles(bookingOwnerProfiles);
+    renderBookingOwnerOptions(name);
+    return {
+      ok: true,
+      message: "Supabase-profiilien tallennus ei onnistunut. Profiili tallennettiin paikallisesti.",
+    };
+  }
+
+  bookingOwnerProfiles = [...bookingOwnerProfiles, data]
+    .map((row) => ({ id: String(row.id || ""), name: normalizeOwnerName(row.name) }))
+    .filter((row) => row.name);
+  setLocalBookingOwnerProfiles(bookingOwnerProfiles);
+  renderBookingOwnerOptions(name);
+  return { ok: true };
+}
+
+async function deleteBookingOwnerProfile(nameRaw) {
+  const name = normalizeOwnerName(nameRaw);
+  if (!name) return { ok: false, message: "Valitse poistettava profiili." };
+
+  const client = getSupabase();
+  if (!client) {
+    bookingOwnerProfiles = bookingOwnerProfiles.filter(
+      (item) => normalizeOwnerName(item.name).toLowerCase() !== name.toLowerCase()
+    );
+    setLocalBookingOwnerProfiles(bookingOwnerProfiles);
+    renderBookingOwnerOptions("");
+    return { ok: true };
+  }
+
+  const { error } = await client.from("booking_profiles").delete().eq("name", name);
+  if (error) {
+    bookingOwnerProfiles = bookingOwnerProfiles.filter(
+      (item) => normalizeOwnerName(item.name).toLowerCase() !== name.toLowerCase()
+    );
+    setLocalBookingOwnerProfiles(bookingOwnerProfiles);
+    renderBookingOwnerOptions("");
+    return {
+      ok: true,
+      message: "Supabase-poisto ei onnistunut. Profiili poistettiin paikallisesta listasta.",
+    };
+  }
+
+  bookingOwnerProfiles = bookingOwnerProfiles.filter(
+    (item) => normalizeOwnerName(item.name).toLowerCase() !== name.toLowerCase()
+  );
+  setLocalBookingOwnerProfiles(bookingOwnerProfiles);
+  renderBookingOwnerOptions("");
+  return { ok: true };
+}
+
 function getEventsForDate(dateValue) {
   if (!dateValue) return [];
   return allEvents.filter((event) => formatIsoDateKey(new Date(event.startDate)) === dateValue);
 }
 
-function updateBookingEventOptions(preferredEventKey = "") {
+function updateBookingEventOptions(preferredEventKey = "", preferredTimeValue = "") {
   if (!bookingDate || !bookingEventSelect) return;
+  const previousTimeValue = bookingTime?.value || "";
   const events = getEventsForDate(bookingDate.value);
   if (events.length === 0) {
     bookingEventSelect.innerHTML = '<option value="">Ei tapahtumia valitulla päivällä</option>';
     bookingEventSelect.value = "";
+    buildBookingTimeOptions(null);
     return;
   }
+  const locationCounts = new Map();
+  events.forEach((event) => {
+    const key = String(event.location ?? "").trim().toLowerCase();
+    if (!key) return;
+    locationCounts.set(key, (locationCounts.get(key) ?? 0) + 1);
+  });
+  const locationOrder = new Map();
   bookingEventSelect.innerHTML = events
     .map((event) => {
-      const label = formatEventSelectLabel(event);
+      const baseLabel =
+        String(event.location ?? "").trim() ||
+        stripHistoryEventNamePrefix(event.title ?? "") ||
+        "Tapahtuma";
+      const locationKey = String(event.location ?? "").trim().toLowerCase();
+      const duplicateCount = locationKey ? locationCounts.get(locationKey) ?? 0 : 0;
+      const idx = locationKey ? (locationOrder.get(locationKey) ?? 0) + 1 : 0;
+      if (locationKey) locationOrder.set(locationKey, idx);
+      const label = duplicateCount > 1 ? `${baseLabel} (${idx})` : baseLabel;
       return `<option value="${escapeHtml(eventKey(event))}">${escapeHtml(label)}</option>`;
     })
     .join("");
@@ -710,6 +1016,8 @@ function updateBookingEventOptions(preferredEventKey = "") {
   } else if (events.length === 1) {
     bookingEventSelect.value = eventKey(events[0]);
   }
+  const selected = events.find((event) => eventKey(event) === bookingEventSelect.value) ?? events[0];
+  buildBookingTimeOptions(selected, preferredTimeValue || previousTimeValue);
 }
 
 function getStatusLabel(status) {
@@ -721,8 +1029,8 @@ function getStatusLabel(status) {
 function getEventLocationLabel(entry) {
   const raw = String(entry.event_name || "").trim();
   if (!raw) return "Ei tapahtumaa";
-  if (raw.includes(" - ")) return raw.split(" - ").at(-1)?.trim() || raw;
-  return raw;
+  const withoutPrefix = stripHistoryEventNamePrefix(raw);
+  return stripEventDateTimeSuffix(withoutPrefix);
 }
 
 /** Historia-rivi: älä näytä toistuvaa tapahtumatyyppi-etuliitettä */
@@ -731,6 +1039,24 @@ function stripHistoryEventNamePrefix(raw) {
     .trim()
     .replace(/^\s*kultamyyntitapahtuma\s*-\s*/i, "")
     .trim();
+}
+
+function stripEventDateTimeSuffix(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return "Ei tapahtumaa";
+  const cleaned = value
+    .replace(/\s*[·-]\s*\d{1,2}\.\d{1,2}\.\d{2,4}\s*klo\s*\d{1,2}[.:]\d{2}\s*$/i, "")
+    .replace(/\s*[·-]\s*\d{1,2}\.\d{1,2}\.\d{2,4}\s*$/i, "")
+    .trim();
+  return cleaned || value;
+}
+
+function formatEventBookingName(event) {
+  if (!event || typeof event !== "object") return "";
+  const location = String(event.location ?? "").trim();
+  if (location) return location;
+  const title = stripHistoryEventNamePrefix(event.title ?? "");
+  return stripEventDateTimeSuffix(title);
 }
 
 function populateTimeOptions(selectElement) {
@@ -746,8 +1072,104 @@ function populateTimeOptions(selectElement) {
   selectElement.innerHTML = options.join("");
 }
 
-function buildBookingTimeOptions() {
-  populateTimeOptions(bookingTime);
+function formatSelectTimeValue(d) {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function getApiBookingRangesForEvent(event) {
+  const ranges = [];
+  for (const raw of getApiBookingsFromEvent(event)) {
+    if (!isApiBookingRealOccupancy(raw)) continue;
+    const norm = normalizeApiBookingRow(raw);
+    const startRaw = norm.startDate || norm.bookingDate;
+    if (!startRaw) continue;
+    let start = parseApiBookingInstant(startRaw, event.startDate);
+    if (Number.isNaN(start.getTime())) continue;
+    start = alignBookingInstantToEventDay(start, event.startDate);
+    let end = norm.endDate ? parseApiBookingInstant(norm.endDate, event.startDate) : null;
+    if (!end || Number.isNaN(end.getTime())) {
+      end = addMinutesToDate(start, DRAWER_SLOT_STEP_MIN);
+    } else {
+      end = alignBookingInstantToEventDay(end, event.startDate);
+    }
+    if (end <= start) end = addMinutesToDate(start, DRAWER_SLOT_STEP_MIN);
+    ranges.push({ start, end });
+  }
+  return ranges;
+}
+
+function buildBookingTimeOptions(selectedEvent = null, preferredTime = "") {
+  if (!bookingTime) return;
+  if (!selectedEvent) {
+    bookingTime.innerHTML = '<option value="">Valitse ensin päivän tapahtuma</option>';
+    return;
+  }
+  const eventStart = new Date(selectedEvent.startDate ?? "");
+  if (Number.isNaN(eventStart.getTime())) {
+    bookingTime.innerHTML = '<option value="">Tapahtuman aikaa ei voitu lukea</option>';
+    return;
+  }
+
+  const rangeStart = new Date(
+    eventStart.getFullYear(),
+    eventStart.getMonth(),
+    eventStart.getDate(),
+    DRAWER_VISIBLE_START_HOUR,
+    0,
+    0,
+    0
+  );
+  const rangeEnd = new Date(
+    eventStart.getFullYear(),
+    eventStart.getMonth(),
+    eventStart.getDate(),
+    DRAWER_VISIBLE_END_HOUR,
+    0,
+    0,
+    0
+  );
+  const bookingRanges = getApiBookingRangesForEvent(selectedEvent);
+  const options = ['<option value="">Valitse aika</option>'];
+  let firstFreeValue = "";
+  let preferredExists = false;
+
+  for (
+    let slotStart = new Date(rangeStart.getTime());
+    slotStart < rangeEnd;
+    slotStart = addMinutesToDate(slotStart, DRAWER_SLOT_STEP_MIN)
+  ) {
+    const slotEnd = addMinutesToDate(slotStart, DRAWER_SLOT_STEP_MIN);
+    const value = formatSelectTimeValue(slotStart);
+    const isTaken = bookingRanges.some((range) => range.start < slotEnd && range.end > slotStart);
+    const isPreferred = preferredTime === value;
+    if (!isTaken && !firstFreeValue) firstFreeValue = value;
+    if (isPreferred) preferredExists = true;
+    const marker = isTaken ? "🔴" : "🟢";
+    const suffix = isTaken ? "Varattu" : "Vapaa";
+    const selectedAttr = isPreferred ? ' selected="selected"' : "";
+    const disabledAttr = isTaken && !isPreferred ? ' disabled="disabled"' : "";
+    const styleAttr = isTaken
+      ? ' style="color:#8b1e2d;background:#fde8eb;"'
+      : ' style="color:#1f5f2a;background:#e8f7e9;"';
+    options.push(
+      `<option value="${value}"${selectedAttr}${disabledAttr}${styleAttr}>${marker} ${value} (${suffix})</option>`
+    );
+  }
+
+  if (preferredTime && !preferredExists) {
+    options.splice(
+      1,
+      0,
+      `<option value="${escapeHtml(preferredTime)}" selected="selected">${escapeHtml(
+        preferredTime
+      )} (nykyinen valinta)</option>`
+    );
+  }
+
+  bookingTime.innerHTML = options.join("");
+  if (!preferredTime && firstFreeValue) {
+    bookingTime.value = firstFreeValue;
+  }
 }
 
 function buildHomeVisitTimeOptions() {
@@ -822,9 +1244,12 @@ async function loadBookings() {
   if (!client) {
     bookings = getLocalBookings();
     renderBookings();
+    renderBookingOwnerOptions();
     renderOverviewStats(bookings);
     renderCalendar();
     renderHistory();
+    renderTable();
+    if (selectedEvent) renderDrawer(selectedEvent);
     return;
   }
 
@@ -839,16 +1264,22 @@ async function loadBookings() {
   if (error) {
     bookings = getLocalBookings();
     renderBookings();
+    renderBookingOwnerOptions();
     renderOverviewStats(bookings);
     renderCalendar();
     renderHistory();
+    renderTable();
+    if (selectedEvent) renderDrawer(selectedEvent);
     return;
   }
   bookings = data ?? [];
   renderBookings();
+  renderBookingOwnerOptions();
   renderOverviewStats(bookings);
   renderCalendar();
   renderHistory();
+  renderTable();
+  if (selectedEvent) renderDrawer(selectedEvent);
 }
 
 async function saveBooking(entry) {
@@ -861,9 +1292,12 @@ async function saveBooking(entry) {
     bookings = next;
     setLocalBookings(next);
     renderBookings();
+    renderBookingOwnerOptions();
     renderOverviewStats(bookings);
     renderCalendar();
     renderHistory();
+    renderTable();
+    if (selectedEvent) renderDrawer(selectedEvent);
     return { ok: true };
   }
   const { error } = await client.from("bookings").insert(entry);
@@ -878,9 +1312,12 @@ async function updateBooking(id, entry) {
     bookings = bookings.map((item) => (item.id === id ? { ...item, ...entry } : item));
     setLocalBookings(bookings);
     renderBookings();
+    renderBookingOwnerOptions();
     renderOverviewStats(bookings);
     renderCalendar();
     renderHistory();
+    renderTable();
+    if (selectedEvent) renderDrawer(selectedEvent);
     return { ok: true };
   }
   const { error } = await client.from("bookings").update(entry).eq("id", id);
@@ -895,9 +1332,12 @@ async function deleteBooking(id) {
     bookings = bookings.filter((item) => item.id !== id);
     setLocalBookings(bookings);
     renderBookings();
+    renderBookingOwnerOptions();
     renderOverviewStats(bookings);
     renderCalendar();
     renderHistory();
+    renderTable();
+    if (selectedEvent) renderDrawer(selectedEvent);
     return { ok: true };
   }
   const { error } = await client.from("bookings").delete().eq("id", id);
@@ -911,6 +1351,7 @@ function resetBookingFormState() {
   if (saveBookingButton) saveBookingButton.textContent = "Tallenna varaus";
   if (toggleBookingFormButton) toggleBookingFormButton.textContent = "+ Uusi varaus";
   if (deleteBookingButton) deleteBookingButton.classList.add("hidden");
+  renderBookingOwnerOptions();
 }
 
 function startBookingEdit(entry) {
@@ -920,10 +1361,8 @@ function startBookingEdit(entry) {
   bookingCustomerName.value = entry.customer_name || "";
   if (bookingPhone) bookingPhone.value = entry.phone || "";
   bookingDate.value = entry.booking_date || "";
-  buildBookingTimeOptions();
-  bookingTime.value = entry.booking_time || "";
-  updateBookingEventOptions(entry.event_key || "");
-  if (bookingOwner) bookingOwner.value = entry.owner || "";
+  updateBookingEventOptions(entry.event_key || "", entry.booking_time || "");
+  renderBookingOwnerOptions(entry.owner || "");
   if (bookingStatus) bookingStatus.value = entry.status || "odottaa";
   if (saveBookingButton) saveBookingButton.textContent = "Tallenna muutokset";
   if (toggleBookingFormButton) toggleBookingFormButton.textContent = "Peruuta muokkaus";
@@ -995,10 +1434,29 @@ async function updateHomeVisit(id, entry) {
   return { ok: true };
 }
 
+async function deleteHomeVisit(id) {
+  const client = getSupabase();
+  if (!client) {
+    homeVisits = homeVisits.filter((visit) => visit.id !== id);
+    setLocalHomeVisits(homeVisits);
+    renderOverviewStats();
+    renderCalendar();
+    renderHomeVisits();
+    renderDailyBookings();
+    return { ok: true };
+  }
+  const { error } = await client.from("home_visits").delete().eq("id", id);
+  if (error) return { ok: false, message: error.message };
+  await loadHomeVisits();
+  renderDailyBookings();
+  return { ok: true };
+}
+
 function resetHomeVisitFormState() {
   editingHomeVisitId = null;
   if (saveHomeVisitButton) saveHomeVisitButton.textContent = "Tallenna kotikäynti";
   if (toggleHomeVisitFormButton) toggleHomeVisitFormButton.textContent = "+ Uusi kotikäynti";
+  renderBookingOwnerOptions(bookingOwner?.value || "", "");
 }
 
 function startHomeVisitEdit(item) {
@@ -1008,7 +1466,7 @@ function startHomeVisitEdit(item) {
   editingHomeVisitId = item.id;
   homeVisitForm.classList.remove("hidden");
   hvCustomerName.value = item.customer_name || "";
-  if (hvNickname) hvNickname.value = item.nickname || "";
+  renderBookingOwnerOptions(bookingOwner?.value || "", item.nickname || "");
   if (hvPhone) hvPhone.value = item.phone || "";
   hvAddress.value = item.address || "";
   const dateObj = new Date(item.visit_time);
@@ -1080,6 +1538,13 @@ function renderHomeVisitItems(items, container) {
               <button type="button" class="table-edit-button" data-home-visit-edit-id="${item.id}">
                 Muokkaa
               </button>
+              <button
+                type="button"
+                class="table-edit-button danger-button"
+                data-home-visit-delete-id="${item.id}"
+              >
+                Poista
+              </button>
               <select class="home-visit-select home-visit-status-select" data-home-visit-status-id="${item.id}">
                 <option value="sovittu" ${status === "sovittu" ? "selected" : ""}>Sovittu</option>
                 <option value="valmis" ${status === "valmis" ? "selected" : ""}>Valmis</option>
@@ -1107,6 +1572,21 @@ function renderHomeVisitItems(items, container) {
       if (!id) return;
       await updateHomeVisitStatus(id, select.value);
       renderCalendar();
+    });
+  });
+
+  container.querySelectorAll("[data-home-visit-delete-id]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = button.getAttribute("data-home-visit-delete-id");
+      if (!id) return;
+      const confirmed = window.confirm("Haluatko varmasti poistaa tämän kotikäynnin?");
+      if (!confirmed) return;
+      button.disabled = true;
+      const result = await deleteHomeVisit(id);
+      button.disabled = false;
+      if (!result.ok) {
+        alert(`Kotikäynnin poisto epäonnistui: ${result.message}`);
+      }
     });
   });
 }
@@ -1180,6 +1660,7 @@ function renderCalendar() {
   if (!calendarGrid || !calendarMonthLabel) return;
   const monthStart = startOfMonth(calendarCursor);
   calendarMonthLabel.textContent = formatMonthYearFi(monthStart);
+  const todayKey = formatIsoDateKey(startOfDay(new Date()));
 
   const first = new Date(monthStart);
   const firstWeekDay = first.getDay() === 0 ? 7 : first.getDay();
@@ -1194,10 +1675,11 @@ function renderCalendar() {
     const bookingCount = bookingMap.get(key) ?? 0;
     const homeCount = homeMap.get(key) ?? 0;
     const isCurrentMonth = day.getMonth() === monthStart.getMonth();
+    const isToday = key === todayKey;
     const bookingClass = calendarMode === "bookings" ? "emphasis" : "";
     const homeClass = calendarMode === "homeVisits" ? "emphasis" : "";
     cells.push(`
-      <article class="calendar-cell ${isCurrentMonth ? "" : "muted-day"}">
+      <article class="calendar-cell ${isCurrentMonth ? "" : "muted-day"} ${isToday ? "today" : ""}">
         <span class="calendar-day">${day.getDate()}</span>
         <div class="calendar-metrics">
           <span class="day-badge booking ${bookingClass}">Varaukset: ${bookingCount}</span>
@@ -1497,7 +1979,7 @@ function renderHistory() {
   historyList.innerHTML = sorted
     .slice(0, 10)
     .map((entry) => {
-      const eventLine = stripHistoryEventNamePrefix(entry.event_name) || "Ei tapahtumaa";
+      const eventLine = getEventLocationLabel(entry);
       return `
       <article class="history-item">
         <div class="history-top">
@@ -1581,53 +2063,41 @@ function renderDrawerSlotGrid(event) {
     return;
   }
 
-  const realInstants = [];
-  for (const raw of getApiBookingsFromEvent(event)) {
-    if (!isApiBookingRealOccupancy(raw)) continue;
-    const norm = normalizeApiBookingRow(raw);
-    let t = parseApiBookingInstant(norm.bookingDate, event.startDate);
-    if (Number.isNaN(t.getTime())) continue;
-    t = alignBookingInstantToEventDay(t, event.startDate);
-    realInstants.push(t);
-  }
-
-  /* Vähintään klo 19 sama päivä tai alkuaika + 8 h — älä koskaan käytä lyhyttä API endDate -arvoa,
-   * joka typistää listan yhteen slottiin (backend voi lähettää esim. ensimmäisen slotin lopun). */
-  let rangeEndDefault = new Date(
+  const rangeStart = new Date(
     eventStart.getFullYear(),
     eventStart.getMonth(),
     eventStart.getDate(),
-    19,
+    DRAWER_VISIBLE_START_HOUR,
     0,
     0,
     0
   );
-  const startPlus8h = addMinutesToDate(eventStart, 8 * 60);
-  if (startPlus8h > rangeEndDefault) {
-    rangeEndDefault = startPlus8h;
-  }
-  if (event.endDate) {
-    const endFromApi = new Date(event.endDate);
-    if (!Number.isNaN(endFromApi.getTime()) && endFromApi > rangeEndDefault) {
-      rangeEndDefault = endFromApi;
-    }
-  }
-  if (rangeEndDefault <= eventStart) {
-    rangeEndDefault = addMinutesToDate(eventStart, 8 * 60);
-  }
-
-  let rangeStart = floorToQuarterHour(eventStart);
-  let rangeEnd = ceilToQuarterHour(rangeEndDefault);
-
-  for (const t of realInstants) {
-    if (t < rangeStart) rangeStart = floorToQuarterHour(t);
-    const slotStart = floorToQuarterHour(t);
-    const slotEnd = addMinutesToDate(slotStart, DRAWER_SLOT_STEP_MIN);
-    if (slotEnd > rangeEnd) rangeEnd = slotEnd;
-  }
-
+  const rangeEnd = new Date(
+    eventStart.getFullYear(),
+    eventStart.getMonth(),
+    eventStart.getDate(),
+    DRAWER_VISIBLE_END_HOUR,
+    0,
+    0,
+    0
+  );
   if (rangeEnd <= rangeStart) {
-    rangeEnd = addMinutesToDate(rangeStart, DRAWER_SLOT_STEP_MIN * 8);
+    drawerSlotList.innerHTML = '<p class="drawer-slots-empty">Ei näytettäviä aikoja.</p>';
+    return;
+  }
+
+  const realRanges = [];
+  for (const raw of getApiBookingsFromEvent(event)) {
+    if (!isApiBookingRealOccupancy(raw)) continue;
+    const norm = normalizeApiBookingRow(raw);
+    if (!norm.startDate || !norm.endDate) continue;
+    let bookingStart = parseApiBookingInstant(norm.startDate, event.startDate);
+    let bookingEnd = parseApiBookingInstant(norm.endDate, event.startDate);
+    if (Number.isNaN(bookingStart.getTime()) || Number.isNaN(bookingEnd.getTime())) continue;
+    bookingStart = alignBookingInstantToEventDay(bookingStart, event.startDate);
+    bookingEnd = alignBookingInstantToEventDay(bookingEnd, event.startDate);
+    if (bookingEnd <= bookingStart) continue;
+    realRanges.push({ start: bookingStart, end: bookingEnd });
   }
 
   const slotStarts = [];
@@ -1647,7 +2117,9 @@ function renderDrawerSlotGrid(event) {
   drawerSlotList.innerHTML = slotStarts
     .map((slotStart) => {
       const slotEnd = addMinutesToDate(slotStart, DRAWER_SLOT_STEP_MIN);
-      const taken = realInstants.some((inst) => inst >= slotStart && inst < slotEnd);
+      const taken = realRanges.some(
+        (bookingRange) => bookingRange.start < slotEnd && bookingRange.end > slotStart
+      );
       const label = `${formatBookingTimeFi(slotStart)} - ${formatBookingTimeFi(slotEnd)}`;
       const rowClass = taken ? "drawer-slot-row drawer-slot-row--busy" : "drawer-slot-row";
       const badgeClass = taken
@@ -1664,6 +2136,7 @@ function renderDrawerSlotGrid(event) {
 }
 
 function renderDrawer(event) {
+  const metrics = getDashboardEventMetrics(event);
   drawerTitle.textContent = event.title;
   drawerMeta.innerHTML = `
     <div class="meta-row"><span class="meta-label">Sijainti</span><span class="meta-value">${escapeHtml(event.location)}</span></div>
@@ -1671,16 +2144,19 @@ function renderDrawer(event) {
       event.startDate
     )}</span></div>
     <div class="meta-row"><span class="meta-label">Varattu yhteensä</span><span class="meta-value">${
-      event.bookedTotal
+      metrics.bookedTotal
     }</span></div>
     <div class="meta-row"><span class="meta-label">Dummy-varaukset</span><span class="meta-value">${
-      event.bookedFake
+      metrics.bookedFake
     }</span></div>
     <div class="meta-row"><span class="meta-label">Oikeat varaukset</span><span class="meta-value">${
-      event.bookedReal
+      metrics.bookedReal
     }</span></div>
     <div class="meta-row"><span class="meta-label">Vapaita paikkoja</span><span class="meta-value">${
-      event.remainingReal
+      metrics.remainingReal
+    }</span></div>
+    <div class="meta-row"><span class="meta-label">Manuaaliset varaukset</span><span class="meta-value">${
+      metrics.manualCount
     }</span></div>
   `;
   renderDrawerSlotGrid(event);
@@ -1708,6 +2184,7 @@ function closeDrawer() {
 
 function renderTable() {
   const filtered = getFilteredDashboardEvents();
+  const manualCountMap = getManualActiveEventBookingCountByKey();
 
   if (filtered.length === 0) {
     eventsBody.innerHTML = `
@@ -1731,11 +2208,8 @@ function renderTable() {
   const visibleEvents = showAllEvents ? filtered : filtered.slice(0, 4);
   const rows = visibleEvents
     .map((event, index) => {
-      const bookedReal = Number(event.bookedReal) || 0;
-      const bookedTotal = Number(event.bookedTotal) || 0;
-      const bookedFake = Number(event.bookedFake) || 0;
-      const remainingReal = Number(event.remainingReal) || 0;
-      const target = Math.max(bookedReal + remainingReal, 1);
+      const { bookedReal, bookedTotal, bookedFake, remainingReal, target, manualCount } =
+        getDashboardEventMetrics(event, manualCountMap);
       const progressPct = Math.min((bookedReal / target) * 100, 100);
       const goalMarkPct = Math.min(100, Math.max(0, (TODAY_TARGET / target) * 100));
       const progressClass = getBookingColorClass(bookedReal);
@@ -1760,6 +2234,7 @@ function renderTable() {
         <div class="event-progress-meta">
           <span>Yhteensä ${bookedTotal}</span>
           <span>Dummy-varaukset ${bookedFake}</span>
+          ${manualCount > 0 ? `<span>Manuaaliset ${manualCount}</span>` : ""}
           <span>Vapaita ${remainingReal}</span>
           <span class="event-progress-arrow">›</span>
         </div>
@@ -1867,8 +2342,106 @@ if (bookingSearchInput) {
 if (bookingDate) {
   bookingDate.addEventListener("change", updateBookingEventOptions);
 }
+if (bookingEventSelect) {
+  bookingEventSelect.addEventListener("change", () => {
+    const selected = getEventsForDate(bookingDate?.value || "").find(
+      (item) => eventKey(item) === bookingEventSelect.value
+    );
+    buildBookingTimeOptions(selected, bookingTime?.value || "");
+  });
+}
+if (addBookingOwnerProfileButton) {
+  addBookingOwnerProfileButton.addEventListener("click", async () => {
+    const input = window.prompt("Anna uuden profiilin nimi");
+    const name = normalizeOwnerName(input);
+    if (!name) return;
+    addBookingOwnerProfileButton.disabled = true;
+    const result = await createBookingOwnerProfile(name);
+    addBookingOwnerProfileButton.disabled = false;
+    if (!result.ok) {
+      alert(result.message || "Profiilin luonti epäonnistui.");
+      return;
+    }
+    if (result.message) {
+      alert(result.message);
+    }
+    if (bookingOwner) bookingOwner.value = name;
+  });
+}
+if (addHomeVisitProfileButton) {
+  addHomeVisitProfileButton.addEventListener("click", async () => {
+    const input = window.prompt("Anna uuden profiilin nimi");
+    const name = normalizeOwnerName(input);
+    if (!name) return;
+    addHomeVisitProfileButton.disabled = true;
+    const result = await createBookingOwnerProfile(name);
+    addHomeVisitProfileButton.disabled = false;
+    if (!result.ok) {
+      alert(result.message || "Profiilin luonti epäonnistui.");
+      return;
+    }
+    if (result.message) {
+      alert(result.message);
+    }
+    if (hvNickname) hvNickname.value = name;
+    syncOwnerProfileActionState(hvNickname, deleteHomeVisitProfileButton);
+  });
+}
+if (deleteBookingOwnerProfileButton) {
+  deleteBookingOwnerProfileButton.addEventListener("click", async () => {
+    const selectedName = normalizeOwnerName(bookingOwner?.value);
+    if (!selectedName) {
+      alert("Valitse ensin poistettava profiili.");
+      return;
+    }
+    const confirmed = window.confirm(`Haluatko varmasti poistaa profiilin "${selectedName}"?`);
+    if (!confirmed) return;
+    deleteBookingOwnerProfileButton.disabled = true;
+    const result = await deleteBookingOwnerProfile(selectedName);
+    deleteBookingOwnerProfileButton.disabled = false;
+    if (!result.ok) {
+      alert(result.message || "Profiilin poisto epäonnistui.");
+      return;
+    }
+    if (result.message) {
+      alert(result.message);
+    }
+  });
+}
+if (deleteHomeVisitProfileButton) {
+  deleteHomeVisitProfileButton.addEventListener("click", async () => {
+    const selectedName = normalizeOwnerName(hvNickname?.value);
+    if (!selectedName) {
+      alert("Valitse ensin poistettava profiili.");
+      return;
+    }
+    const confirmed = window.confirm(`Haluatko varmasti poistaa profiilin "${selectedName}"?`);
+    if (!confirmed) return;
+    deleteHomeVisitProfileButton.disabled = true;
+    const result = await deleteBookingOwnerProfile(selectedName);
+    deleteHomeVisitProfileButton.disabled = false;
+    if (!result.ok) {
+      alert(result.message || "Profiilin poisto epäonnistui.");
+      return;
+    }
+    if (result.message) {
+      alert(result.message);
+    }
+  });
+}
+if (bookingOwner) {
+  bookingOwner.addEventListener("change", () =>
+    syncOwnerProfileActionState(bookingOwner, deleteBookingOwnerProfileButton)
+  );
+}
+if (hvNickname) {
+  hvNickname.addEventListener("change", () =>
+    syncOwnerProfileActionState(hvNickname, deleteHomeVisitProfileButton)
+  );
+}
 
 buildBookingTimeOptions();
+renderBookingOwnerOptions();
 buildHomeVisitTimeOptions();
 navItems.forEach((item) => {
   item.addEventListener("click", () => {
@@ -1985,7 +2558,7 @@ if (bookingForm) {
     const owner = bookingOwner?.value.trim() ?? "";
     const selectedKey = bookingEventSelect?.value ?? "";
     const eventOfDay = getEventsForDate(date).find((item) => eventKey(item) === selectedKey);
-    const eventName = eventOfDay ? formatEventSelectLabel(eventOfDay) : "";
+    const eventName = formatEventBookingName(eventOfDay);
 
     if (!customerName || !date || !selectedTime) {
       alert("Valitse aika listasta.");
@@ -2105,10 +2678,12 @@ function startDashboard() {
   document.body.classList.remove("pin-locked");
   if (pinGate) pinGate.classList.add("hidden");
   switchView(activeView);
+  void loadBookingOwnerProfiles();
   void loadHomeVisits();
   void loadBookings();
   void loadData();
   setInterval(() => {
+    void loadBookingOwnerProfiles();
     void loadHomeVisits();
     void loadBookings();
     void loadData();

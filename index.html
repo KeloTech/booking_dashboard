@@ -170,6 +170,7 @@
               </div>
             </div>
             <p id="dailyBookingsContext" class="daily-bookings-context"></p>
+            <div id="dailyEventSwitch" class="daily-event-switch" role="tablist" aria-label="Päivän tapahtumat"></div>
             <div id="dailyBookingsList" class="daily-bookings-list"></div>
           </section>
         </section>
@@ -211,7 +212,26 @@
           <form id="homeVisitForm" class="home-visit-form card hidden">
             <div class="home-grid">
               <label>Asiakkaan nimi<input id="hvCustomerName" type="text" required /></label>
-              <label>Nimimerkki<input id="hvNickname" type="text" placeholder="Esim. MK" /></label>
+              <label>
+                Tekijäprofiili
+                <div class="booking-owner-row">
+                  <select id="hvNickname" class="home-visit-select">
+                    <option value="">Valitse tekijä</option>
+                  </select>
+                  <div class="booking-owner-actions">
+                    <button id="addHomeVisitProfileButton" type="button" class="table-edit-button">
+                      + Uusi profiili
+                    </button>
+                    <button
+                      id="deleteHomeVisitProfileButton"
+                      type="button"
+                      class="table-edit-button danger-button"
+                    >
+                      Poista profiili
+                    </button>
+                  </div>
+                </div>
+              </label>
               <label>Puhelin<input id="hvPhone" type="text" /></label>
               <label>Osoite<input id="hvAddress" type="text" required /></label>
               <label>Päivämäärä<input id="hvVisitDate" type="date" required /></label>
@@ -271,7 +291,26 @@
                 Päivän tapahtuma
                 <select id="bookingEventSelect" class="home-visit-select"></select>
               </label>
-              <label>Soittaja<input id="bookingOwner" type="text" placeholder="Esim. Oma nimi" /></label>
+              <label>
+                Tekijäprofiili
+                <div class="booking-owner-row">
+                  <select id="bookingOwner" class="home-visit-select">
+                    <option value="">Valitse tekijä</option>
+                  </select>
+                  <div class="booking-owner-actions">
+                    <button id="addBookingOwnerProfileButton" type="button" class="table-edit-button">
+                      + Uusi profiili
+                    </button>
+                    <button
+                      id="deleteBookingOwnerProfileButton"
+                      type="button"
+                      class="table-edit-button danger-button"
+                    >
+                      Poista profiili
+                    </button>
+                  </div>
+                </div>
+              </label>
               <label>
                 Tila
                 <select id="bookingStatus" class="home-visit-select">
@@ -331,9 +370,6 @@
 
       <section class="drawer-slots-section" aria-labelledby="drawerSlotsTitle">
         <h3 id="drawerSlotsTitle" class="drawer-slots-heading">Varausikkunat</h3>
-        <p class="drawer-slots-note">
-          15 minuutin välit: varattu = oikea varaus (ei dummy-/testimerkintöjä). Asiakastietoja ei näytetä.
-        </p>
         <div id="drawerSlotList" class="drawer-slot-list"></div>
       </section>
 
