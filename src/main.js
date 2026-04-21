@@ -484,11 +484,23 @@ function renderDailyEventSwitch(focusEvent, events, isWeek) {
     dailyEventSwitch.innerHTML = "";
     return;
   }
+  const locationCounts = new Map();
+  dayEvents.forEach((ev) => {
+    const key = String(ev.location ?? "").trim().toLowerCase();
+    if (!key) return;
+    locationCounts.set(key, (locationCounts.get(key) ?? 0) + 1);
+  });
+  const locationOrder = new Map();
   dailyEventSwitch.innerHTML = dayEvents
     .map((ev) => {
       const key = eventKey(ev);
       const active = key === focusedEventKeyForDaily;
-      const label = `${formatBookingTimeFi(new Date(ev.startDate))} · ${String(ev.location ?? "").trim() || "Tapahtuma"}`;
+      const baseLabel = String(ev.location ?? "").trim() || "Tapahtuma";
+      const locationKey = baseLabel.toLowerCase();
+      const duplicateCount = locationCounts.get(locationKey) ?? 0;
+      const idx = (locationOrder.get(locationKey) ?? 0) + 1;
+      locationOrder.set(locationKey, idx);
+      const label = duplicateCount > 1 ? `${baseLabel} (${idx})` : baseLabel;
       return `<button type="button" class="daily-event-switch-btn${active ? " active" : ""}" data-daily-event-key="${escapeHtml(
         key
       )}" aria-pressed="${active ? "true" : "false"}">${escapeHtml(label)}</button>`;
@@ -597,7 +609,7 @@ function renderDailyBookings() {
   });
 
   if (dailyBookingsContext) {
-    const ctx = `${focusEvent.location ?? ""} · ${formatEventDayAndTime(focusEvent.startDate)}`;
+    const ctx = `${focusEvent.location ?? ""} · ${formatDateOnly(focusEvent.startDate)}`;
     dailyBookingsContext.textContent = `${ctx}${isWeek ? " (koko viikko)" : ""}`;
   }
 
@@ -1723,11 +1735,9 @@ function drawTodayChart(hourlyCounts, target, yAxisMax) {
   const visibleIndex = Math.min(points.length - 1, Math.max(0, visibleHour - CHART_START_HOUR));
   const visiblePoints = points.slice(0, visibleIndex + 1);
 
-  const smoothPath = visiblePoints.reduce((path, point, index, arr) => {
+  const smoothPath = visiblePoints.reduce((path, point, index) => {
     if (index === 0) return `M ${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
-    const prev = arr[index - 1];
-    const midX = ((prev.x + point.x) / 2).toFixed(1);
-    return `${path} Q ${midX} ${prev.y.toFixed(1)}, ${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
+    return `${path} L ${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
   }, "");
   chartDots.innerHTML = "";
   const lastVisiblePoint = visiblePoints[visiblePoints.length - 1] || points[0];
