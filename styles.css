@@ -34,6 +34,12 @@ body {
   border-right: 1px solid var(--line);
   background: #fbf6ea;
   padding: 1rem 0.75rem;
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: 100vh;
+  overflow-y: auto;
+  z-index: 20;
 }
 
 .brand {
@@ -542,7 +548,7 @@ button:disabled:hover {
 }
 
 .history-list {
-  margin-top: 0.7rem;
+  margin-top: 0;
   display: grid;
   gap: 0.6rem;
 }
@@ -734,6 +740,23 @@ button:disabled:hover {
   align-items: flex-start;
   gap: 1rem;
   margin-bottom: 0.35rem;
+}
+
+.daily-bookings-head-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.daily-bookings-source-toggle {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.12rem;
+  background: #e8e1d4;
+  padding: 0.22rem;
+  border-radius: 0.5rem;
+  width: fit-content;
 }
 
 .daily-bookings-title {
@@ -1357,6 +1380,43 @@ tbody tr:hover {
   margin-bottom: 0.9rem;
 }
 
+.home-visit-form--compact {
+  padding: 1rem 1.1rem 1rem;
+}
+
+.home-visit-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  align-items: start;
+}
+
+.home-visit-form--compact .home-visit-field {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.home-visit-form--compact .home-visit-field--full {
+  grid-column: 1 / -1;
+}
+
+.home-visit-profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+
+.home-visit-form--compact .home-actions {
+  margin-top: 1rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line);
+}
+
 .home-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1387,15 +1447,68 @@ tbody tr:hover {
   resize: vertical;
 }
 
-.booking-owner-row {
+.booking-form-grid {
   display: grid;
-  gap: 0.38rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  align-items: start;
 }
 
-.booking-owner-actions {
+.booking-form--compact .booking-form-grid {
+  margin: 0;
+}
+
+.booking-field {
+  display: grid;
+  gap: 0.32rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.booking-field--split {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  align-items: stretch;
+}
+
+.booking-field-col {
+  display: grid;
+  gap: 0.32rem;
+  align-content: start;
+  min-width: 0;
+}
+
+.booking-owner-label-row {
   display: flex;
-  gap: 0.4rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  min-height: 1.35rem;
+}
+
+.booking-inline-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.booking-owner-inline-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-shrink: 0;
   flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.booking-form--compact .booking-form-actions {
+  margin-top: 1rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line);
 }
 
 .home-actions {
@@ -1628,6 +1741,18 @@ tbody tr:hover {
   }
 
   .home-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .booking-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .booking-field--split {
+    grid-template-columns: 1fr;
+  }
+
+  .home-visit-form-grid {
     grid-template-columns: 1fr;
   }
 

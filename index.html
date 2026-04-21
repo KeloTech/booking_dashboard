@@ -3,14 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Varaustilanne - Sisäinen dashboard</title>
+    <title>Varaustilanne</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body class="pin-locked">
     <div id="pinGate" class="pin-gate" aria-modal="true" role="dialog" aria-labelledby="pinTitle">
       <div class="pin-card">
-        <h2 id="pinTitle">Anna salasana</h2>
-        <p class="pin-help">Syötä salasana jatkaaksesi.</p>
+        <h2 id="pinTitle">Salasana</h2>
         <form id="pinForm" class="pin-form" novalidate>
           <label for="pinInput">Salasana</label>
           <input
@@ -22,7 +21,7 @@
             required
           />
           <p id="pinError" class="pin-error hidden">Virheellinen PIN-koodi.</p>
-          <button id="pinSubmitButton" type="submit">Avaa dashboard</button>
+          <button id="pinSubmitButton" type="submit">Sisään</button>
         </form>
       </div>
     </div>
@@ -34,19 +33,19 @@
             <span class="logo-kulta">Kulta</span><span class="logo-myynti">myynti</span
             ><span class="logo-myynti">.fi</span>
           </p>
-          <p class="brand-subtitle">Varausjärjestelmä</p>
         </div>
         <nav class="sidebar-nav">
           <button type="button" class="nav-item active" data-view="dashboard">Päänäkymä</button>
           <button type="button" class="nav-item" data-view="calendar">Kalenteri</button>
           <button type="button" class="nav-item" data-view="homeVisits">Kotikäynnit</button>
           <button type="button" class="nav-item" data-view="bookings">Tapahtumavaraukset</button>
+          <button type="button" class="nav-item" data-view="history">Historia</button>
         </nav>
       </aside>
 
       <main class="container">
         <header class="header">
-          <button id="refreshButton" type="button">Päivitä nyt</button>
+          <button id="refreshButton" type="button">Päivitä</button>
         </header>
 
         <section id="dashboardView" class="view active-view">
@@ -75,15 +74,15 @@
               <g id="chartDots"></g>
               <text id="chartTargetLabel" x="620" y="102">Tavoite</text>
             </svg>
-            <p id="chartCaption" class="chart-caption">Vielä 12 varausta tavoitteeseen</p>
+            <p id="chartCaption" class="chart-caption">—</p>
           </article>
 
           </section>
 
-          <section class="weekly-layout">
+          <section id="dashboardWeekMetricsSection" class="weekly-layout">
             <article id="weeklyWrapCard" class="weekly-wrap card">
           <div class="weekly-head">
-            <h2>Viikkotavoite (ma–to)</h2>
+            <h2>Ma–to</h2>
             <p id="weekTotalText">0 / 48</p>
           </div>
           <div class="weekly-chart-area">
@@ -111,56 +110,70 @@
             </div>
           </div>
           </div>
-          <p id="weekProgressText" class="week-progress">48 varausta viikkotavoitteeseen</p>
+          <p id="weekProgressText" class="week-progress">—</p>
             </article>
 
             <div class="weekly-side">
               <article class="metric-card card">
                 <p class="metric-title">Putki</p>
                 <p id="streakValue" class="metric-value">0</p>
-                <p id="streakLabel" class="metric-subtext">peräkkäistä päivää varauksia</p>
+                <p id="streakLabel" class="metric-subtext">päivää</p>
               </article>
               <article class="metric-card card">
                 <p class="metric-title">Viikon paras</p>
                 <p id="weekBestValue" class="metric-value">0</p>
-                <p id="weekBestLabel" class="metric-subtext">varauksen päiväkohtainen ennätys</p>
+                <p id="weekBestLabel" class="metric-subtext">max / pv</p>
               </article>
             </div>
           </section>
 
-          <section class="controls" aria-label="Hakutoiminnot">
+          <section class="controls" aria-label="Haku">
             <input
               id="searchInput"
               type="search"
-              placeholder="Hae paikkakuntaa, päivää tai tapahtumaa..."
+              placeholder="Hae…"
               autocomplete="off"
             />
           </section>
 
           <section class="status-row" aria-live="polite">
-            <p id="statusText">Ladataan tietoja...</p>
+            <p id="statusText">Ladataan…</p>
             <p id="updatedText" class="updated"></p>
-          </section>
-
-          <section class="history-wrap" aria-live="polite">
-            <div class="history-header">
-              <h2>Historia</h2>
-              <p id="historyStatus" class="history-status">Ladataan historiaa...</p>
-            </div>
-            <div id="historyList" class="history-list"></div>
           </section>
 
           <section class="events-wrap card">
             <div id="eventsBody" class="events-progress-list"></div>
             <button id="toggleEventsButton" type="button" class="toggle-events-button hidden">
-              Katso kaikki
+              Kaikki
             </button>
           </section>
 
           <section class="daily-bookings-wrap card" aria-labelledby="dailyBookingsTitle">
             <div class="daily-bookings-head">
-              <h2 id="dailyBookingsTitle" class="daily-bookings-title">Päivän varaukset</h2>
-              <div class="daily-bookings-view-toggle" role="tablist" aria-label="Näkymä">
+              <div class="daily-bookings-head-main">
+                <h2 id="dailyBookingsTitle" class="daily-bookings-title">Varaukset</h2>
+                <div class="daily-bookings-source-toggle" role="tablist" aria-label="Lähde">
+                  <button
+                    type="button"
+                    class="daily-view-tab daily-source-tab active"
+                    data-daily-source="bookings"
+                    role="tab"
+                    aria-selected="true"
+                  >
+                    Tapahtumat
+                  </button>
+                  <button
+                    type="button"
+                    class="daily-view-tab daily-source-tab"
+                    data-daily-source="homeVisits"
+                    role="tab"
+                    aria-selected="false"
+                  >
+                    Kotikäynnit
+                  </button>
+                </div>
+              </div>
+              <div class="daily-bookings-view-toggle" role="tablist" aria-label="Aikaväli">
                 <button type="button" class="daily-view-tab active" data-daily-mode="day" role="tab" aria-selected="true">
                   Päivä
                 </button>
@@ -170,7 +183,7 @@
               </div>
             </div>
             <p id="dailyBookingsContext" class="daily-bookings-context"></p>
-            <div id="dailyEventSwitch" class="daily-event-switch" role="tablist" aria-label="Päivän tapahtumat"></div>
+            <div id="dailyEventSwitch" class="daily-event-switch" role="tablist" aria-label="Tapahtuma"></div>
             <div id="dailyBookingsList" class="daily-bookings-list"></div>
           </section>
         </section>
@@ -179,7 +192,6 @@
           <div class="section-head">
             <div>
               <h2>Kalenteri</h2>
-              <p class="section-subtitle">Näe varaukset ja kotikäynnit kalenterinäkymässä.</p>
             </div>
             <div class="calendar-controls">
               <button id="calendarPrev" type="button" class="icon-button">‹</button>
@@ -204,52 +216,52 @@
           <div class="section-head">
             <div>
               <h2>Kotikäynnit</h2>
-              <p class="section-subtitle">Hallinnoi ja kirjaa kotikäyntejä asiakkaille.</p>
             </div>
             <button id="toggleHomeVisitFormButton" type="button">+ Uusi kotikäynti</button>
           </div>
 
-          <form id="homeVisitForm" class="home-visit-form card hidden">
-            <div class="home-grid">
-              <label>Asiakkaan nimi<input id="hvCustomerName" type="text" required /></label>
-              <label>
+          <form id="homeVisitForm" class="home-visit-form card hidden home-visit-form--compact">
+            <div class="home-visit-form-grid">
+              <label class="home-visit-field home-visit-field--full">
                 Tekijäprofiili
-                <div class="booking-owner-row">
-                  <select id="hvNickname" class="home-visit-select">
-                    <option value="">Valitse tekijä</option>
-                  </select>
-                  <div class="booking-owner-actions">
-                    <button id="addHomeVisitProfileButton" type="button" class="table-edit-button">
-                      + Uusi profiili
-                    </button>
-                    <button
-                      id="deleteHomeVisitProfileButton"
-                      type="button"
-                      class="table-edit-button danger-button"
-                    >
-                      Poista profiili
-                    </button>
-                  </div>
+                <select id="hvNickname" class="home-visit-select" required>
+                  <option value="">Valitse tekijä</option>
+                </select>
+                <div class="home-visit-profile-actions">
+                  <button id="addHomeVisitProfileButton" type="button" class="table-edit-button">
+                    + Uusi profiili
+                  </button>
+                  <button
+                    id="deleteHomeVisitProfileButton"
+                    type="button"
+                    class="table-edit-button danger-button"
+                  >
+                    Poista profiili
+                  </button>
                 </div>
               </label>
-              <label>Puhelin<input id="hvPhone" type="text" /></label>
-              <label>Osoite<input id="hvAddress" type="text" required /></label>
-              <label>Päivämäärä<input id="hvVisitDate" type="date" required /></label>
-              <label>
+              <label class="home-visit-field">
+                Päivämäärä
+                <input id="hvVisitDate" type="date" required />
+              </label>
+              <label class="home-visit-field">
                 Aika
                 <select id="hvVisitTime" class="home-visit-select" required>
                   <option value="">Valitse aika</option>
                 </select>
               </label>
+              <label class="home-visit-field home-visit-field--full">
+                Lisätiedot
+                <textarea id="hvDetails" rows="4" required></textarea>
+              </label>
             </div>
-            <label>Lisätiedot<textarea id="hvDetails" rows="3" required></textarea></label>
             <div class="home-actions">
               <button id="saveHomeVisitButton" type="submit">Tallenna kotikäynti</button>
             </div>
           </form>
 
           <section class="home-visit-section">
-            <h3>Tulevat käynnit</h3>
+            <h3>Tulevat</h3>
             <div id="futureHomeVisitsList" class="home-visit-list"></div>
           </section>
 
@@ -258,9 +270,34 @@
             <div id="todayHomeVisitsList" class="home-visit-list"></div>
           </section>
 
-          <section class="home-visit-section">
-            <h3>Aiemmat käynnit</h3>
-            <div id="pastHomeVisitsList" class="home-visit-list"></div>
+          <section class="daily-bookings-wrap card home-page-daily-strip">
+            <div class="daily-bookings-head">
+              <div class="daily-bookings-head-main">
+                <h2 class="daily-bookings-title">Varaukset</h2>
+              </div>
+              <div class="daily-bookings-view-toggle" role="tablist" aria-label="Aikaväli">
+                <button
+                  type="button"
+                  class="daily-view-tab home-page-dw-tab active"
+                  data-home-page-dw="day"
+                  role="tab"
+                  aria-selected="true"
+                >
+                  Päivä
+                </button>
+                <button
+                  type="button"
+                  class="daily-view-tab home-page-dw-tab"
+                  data-home-page-dw="week"
+                  role="tab"
+                  aria-selected="false"
+                >
+                  Viikko
+                </button>
+              </div>
+            </div>
+            <p id="homeVisitsPageRangeContext" class="daily-bookings-context"></p>
+            <div id="homeVisitsPageDailyList" class="daily-bookings-list"></div>
           </section>
         </section>
 
@@ -268,59 +305,72 @@
           <div class="section-head">
             <div>
               <h2>Tapahtumavaraukset</h2>
-              <p id="bookingsSubtitle" class="section-subtitle">
-                Hallinnoi ja merkitse tapahtumavarauksia.
-              </p>
             </div>
             <button id="toggleBookingFormButton" type="button">+ Uusi varaus</button>
           </div>
 
-          <form id="bookingForm" class="home-visit-form card hidden">
-            <div class="home-grid">
-              <label>Asiakas<input id="bookingCustomerName" type="text" required /></label>
-              <label>Puhelin<input id="bookingPhone" type="text" /></label>
-              <label>Tyyppi<input id="bookingTypeFixed" type="text" value="Tapahtumavaraus" readonly /></label>
-              <label>Päivämäärä<input id="bookingDate" type="date" required /></label>
-              <label>
+          <form id="bookingForm" class="home-visit-form card hidden booking-form--compact">
+            <div class="booking-form-grid">
+              <label class="booking-field">
+                Asiakas
+                <input id="bookingCustomerName" type="text" required />
+              </label>
+              <label class="booking-field">
+                Puhelin
+                <input id="bookingPhone" type="text" inputmode="tel" autocomplete="tel" />
+              </label>
+              <label class="booking-field">
+                Sähköposti
+                <input id="bookingEmail" type="email" autocomplete="email" />
+              </label>
+              <label class="booking-field">
+                Päivämäärä
+                <input id="bookingDate" type="date" required />
+              </label>
+              <label class="booking-field">
                 Aika
                 <select id="bookingTime" class="home-visit-select" required>
                   <option value="">Valitse aika</option>
                 </select>
               </label>
-              <label>
-                Päivän tapahtuma
+              <label class="booking-field">
+                Tapahtuma
                 <select id="bookingEventSelect" class="home-visit-select"></select>
               </label>
-              <label>
-                Tekijäprofiili
-                <div class="booking-owner-row">
+              <div class="booking-field booking-field--split">
+                <div class="booking-field-col">
+                  <div class="booking-owner-label-row">
+                    <label for="bookingOwner" class="booking-inline-label">Tekijäprofiili</label>
+                    <div class="booking-owner-inline-actions">
+                      <button id="addBookingOwnerProfileButton" type="button" class="table-edit-button">
+                        + Uusi
+                      </button>
+                      <button
+                        id="deleteBookingOwnerProfileButton"
+                        type="button"
+                        class="table-edit-button danger-button"
+                      >
+                        Poista
+                      </button>
+                    </div>
+                  </div>
                   <select id="bookingOwner" class="home-visit-select">
                     <option value="">Valitse tekijä</option>
                   </select>
-                  <div class="booking-owner-actions">
-                    <button id="addBookingOwnerProfileButton" type="button" class="table-edit-button">
-                      + Uusi profiili
-                    </button>
-                    <button
-                      id="deleteBookingOwnerProfileButton"
-                      type="button"
-                      class="table-edit-button danger-button"
-                    >
-                      Poista profiili
-                    </button>
-                  </div>
                 </div>
-              </label>
-              <label>
-                Tila
-                <select id="bookingStatus" class="home-visit-select">
-                  <option value="vahvistettu">Vahvistettu</option>
-                  <option value="odottaa">Odottaa</option>
-                  <option value="peruttu">Peruttu</option>
-                </select>
-              </label>
+                <div class="booking-field-col">
+                  <div class="booking-owner-label-row">
+                    <label for="bookingStatus" class="booking-inline-label">Tila</label>
+                  </div>
+                  <select id="bookingStatus" class="home-visit-select">
+                    <option value="vahvistettu">Vahvistettu</option>
+                    <option value="odottaa">Odottaa</option>
+                    <option value="peruttu">Peruttu</option>
+                  </select>
+                </div>
+              </div>
             </div>
-            <div class="home-actions">
+            <div class="home-actions booking-form-actions">
               <button id="deleteBookingButton" type="button" class="danger-button hidden">
                 Poista varaus
               </button>
@@ -328,11 +378,11 @@
             </div>
           </form>
 
-          <section class="controls" aria-label="Varausten haku">
+          <section class="controls" aria-label="Haku">
             <input
               id="bookingSearchInput"
               type="search"
-              placeholder="Hae varauksista..."
+              placeholder="Hae…"
               autocomplete="off"
             />
           </section>
@@ -345,6 +395,7 @@
                   <th>Tapahtuma</th>
                   <th>Kirjattu</th>
                   <th>Puhelin</th>
+                  <th>Sähköposti</th>
                   <th>Tila</th>
                   <th>Nimi</th>
                   <th>Muokkaa</th>
@@ -354,13 +405,51 @@
             </table>
           </section>
         </section>
+
+        <section id="historyView" class="view hidden">
+          <div class="section-head">
+            <div>
+              <h2>Historia</h2>
+            </div>
+          </div>
+          <div class="calendar-tabs" role="tablist" aria-label="Näkymä">
+            <button
+              type="button"
+              class="calendar-tab history-mode-tab active"
+              data-history-mode="bookings"
+              role="tab"
+              aria-selected="true"
+            >
+              Tapahtumavaraukset
+            </button>
+            <button
+              type="button"
+              class="calendar-tab history-mode-tab"
+              data-history-mode="pastHomeVisits"
+              role="tab"
+              aria-selected="false"
+            >
+              Kotikäynnit
+            </button>
+          </div>
+          <div id="historyPanelBookings" class="history-subview" role="tabpanel">
+            <section class="history-wrap" aria-live="polite">
+              <div id="historyList" class="history-list"></div>
+            </section>
+          </div>
+          <div id="historyPanelPastHomeVisits" class="history-subview hidden" role="tabpanel">
+            <section class="home-visit-section history-past-home card">
+              <div id="pastHomeVisitsList" class="home-visit-list"></div>
+            </section>
+          </div>
+        </section>
       </main>
     </div>
 
     <div id="overlay" class="overlay hidden" aria-hidden="true"></div>
     <aside id="eventDrawer" class="drawer hidden" aria-hidden="true">
       <div class="drawer-header">
-        <h2 id="drawerTitle">Tapahtuman tiedot</h2>
+        <h2 id="drawerTitle">Tapahtuma</h2>
         <button id="closeDrawerButton" type="button" class="icon-button" aria-label="Sulje">
           ✕
         </button>
@@ -369,7 +458,7 @@
       <section id="drawerMeta" class="drawer-meta"></section>
 
       <section class="drawer-slots-section" aria-labelledby="drawerSlotsTitle">
-        <h3 id="drawerSlotsTitle" class="drawer-slots-heading">Varausikkunat</h3>
+        <h3 id="drawerSlotsTitle" class="drawer-slots-heading">Ajat</h3>
         <div id="drawerSlotList" class="drawer-slot-list"></div>
       </section>
 

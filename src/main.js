@@ -8,6 +8,19 @@ const BOOKERS_API_URL = API_URL.includes("?") ? `${API_URL}&mode=bookers` : `${A
 /** API:n testivaraukset (isTest) piilotetaan listasta */
 const HIDE_TEST_API_BOOKINGS = true;
 
+/**
+ * Päänäkymän tavoite-/tilasto-osiot (kuten kuvassa): kaavion alateksti
+ * ("Vielä X varausta…"), viikkotavoite ma–to, Putki ja Viikon paras.
+ * Aseta `true` näyttääksesi ne uudelleen.
+ */
+const DASHBOARD_SHOW_WEEK_GOALS_AND_CHART_CAPTION = false;
+
+/** false = piilottaa manuaalisen päivitysnapin (tausta päivittää automaattisesti). */
+const SHOW_MANUAL_REFRESH_BUTTON = false;
+
+/** false = piilottaa kalenterinäkymän ja sen linkin sivupalkista. */
+const SHOW_CALENDAR_NAV_AND_VIEW = false;
+
 const REFRESH_MS = 60000;
 const DASHBOARD_PIN = "3105Ranta!4601";
 const PIN_SESSION_KEY = "dashboardPinUnlocked";
@@ -45,12 +58,15 @@ const commentInput = document.getElementById("commentInput");
 const saveNoteButton = document.getElementById("saveNoteButton");
 const notesList = document.getElementById("notesList");
 const historyList = document.getElementById("historyList");
-const historyStatus = document.getElementById("historyStatus");
 const navItems = document.querySelectorAll(".nav-item[data-view]");
 const dashboardView = document.getElementById("dashboardView");
 const calendarView = document.getElementById("calendarView");
 const homeVisitsView = document.getElementById("homeVisitsView");
 const bookingsView = document.getElementById("bookingsView");
+const historyView = document.getElementById("historyView");
+const historyPanelBookings = document.getElementById("historyPanelBookings");
+const historyPanelPastHomeVisits = document.getElementById("historyPanelPastHomeVisits");
+const historyModeTabs = document.querySelectorAll(".history-mode-tab[data-history-mode]");
 const calendarMonthLabel = document.getElementById("calendarMonthLabel");
 const calendarGrid = document.getElementById("calendarGrid");
 const calendarPrev = document.getElementById("calendarPrev");
@@ -58,12 +74,9 @@ const calendarNext = document.getElementById("calendarNext");
 const calendarTabs = document.querySelectorAll(".calendar-tab[data-calendar-mode]");
 const toggleHomeVisitFormButton = document.getElementById("toggleHomeVisitFormButton");
 const homeVisitForm = document.getElementById("homeVisitForm");
-const hvCustomerName = document.getElementById("hvCustomerName");
 const hvNickname = document.getElementById("hvNickname");
 const addHomeVisitProfileButton = document.getElementById("addHomeVisitProfileButton");
 const deleteHomeVisitProfileButton = document.getElementById("deleteHomeVisitProfileButton");
-const hvPhone = document.getElementById("hvPhone");
-const hvAddress = document.getElementById("hvAddress");
 const hvVisitDate = document.getElementById("hvVisitDate");
 const hvVisitTime = document.getElementById("hvVisitTime");
 const hvDetails = document.getElementById("hvDetails");
@@ -71,11 +84,14 @@ const saveHomeVisitButton = document.getElementById("saveHomeVisitButton");
 const todayHomeVisitsList = document.getElementById("todayHomeVisitsList");
 const pastHomeVisitsList = document.getElementById("pastHomeVisitsList");
 const futureHomeVisitsList = document.getElementById("futureHomeVisitsList");
-const bookingsSubtitle = document.getElementById("bookingsSubtitle");
+const homeVisitsPageDailyList = document.getElementById("homeVisitsPageDailyList");
+const homeVisitsPageRangeContext = document.getElementById("homeVisitsPageRangeContext");
+const homeVisitsPageDayWeekTabs = document.querySelectorAll(".home-page-dw-tab[data-home-page-dw]");
 const toggleBookingFormButton = document.getElementById("toggleBookingFormButton");
 const bookingForm = document.getElementById("bookingForm");
 const bookingCustomerName = document.getElementById("bookingCustomerName");
 const bookingPhone = document.getElementById("bookingPhone");
+const bookingEmail = document.getElementById("bookingEmail");
 const bookingDate = document.getElementById("bookingDate");
 const bookingTime = document.getElementById("bookingTime");
 const bookingEventSelect = document.getElementById("bookingEventSelect");
@@ -113,6 +129,36 @@ const weekWedBar = document.getElementById("weekWedBar");
 const weekThuBar = document.getElementById("weekThuBar");
 const weeklyWrapCard = document.getElementById("weeklyWrapCard");
 const weekTargetLine = document.getElementById("weekTargetLine");
+const dashboardWeekMetricsSection = document.getElementById("dashboardWeekMetricsSection");
+
+function applyDashboardOptionalBlocksVisibility() {
+  const show = DASHBOARD_SHOW_WEEK_GOALS_AND_CHART_CAPTION;
+  chartCaption?.classList.toggle("hidden", !show);
+  dashboardWeekMetricsSection?.classList.toggle("hidden", !show);
+}
+
+applyDashboardOptionalBlocksVisibility();
+
+const calendarNavItem = document.querySelector('.nav-item[data-view="calendar"]');
+const appMainHeader = document.querySelector("main.container > header.header");
+
+function applyOptionalChromeVisibility() {
+  if (!SHOW_MANUAL_REFRESH_BUTTON) {
+    refreshButton?.classList.add("hidden");
+    appMainHeader?.classList.add("hidden");
+  } else {
+    refreshButton?.classList.remove("hidden");
+    appMainHeader?.classList.remove("hidden");
+  }
+  if (!SHOW_CALENDAR_NAV_AND_VIEW) {
+    calendarNavItem?.classList.add("hidden");
+  } else {
+    calendarNavItem?.classList.remove("hidden");
+  }
+}
+
+applyOptionalChromeVisibility();
+
 const pinGate = document.getElementById("pinGate");
 const pinForm = document.getElementById("pinForm");
 const pinInput = document.getElementById("pinInput");
@@ -122,6 +168,7 @@ const dailyBookingsList = document.getElementById("dailyBookingsList");
 const dailyBookingsContext = document.getElementById("dailyBookingsContext");
 const dailyEventSwitch = document.getElementById("dailyEventSwitch");
 const dailyViewTabs = document.querySelectorAll(".daily-view-tab[data-daily-mode]");
+const dailySourceTabs = document.querySelectorAll(".daily-source-tab[data-daily-source]");
 
 let allEvents = [];
 let generatedAt = null;
@@ -133,6 +180,8 @@ let appStarted = false;
 let homeVisits = [];
 let editingHomeVisitId = null;
 let activeView = "dashboard";
+/** Historia-näkymän välilehti: tapahtumavaraukset tai menneet kotikäynnit */
+let historyPanelMode = "bookings";
 let calendarMode = "all";
 let calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let bookings = [];
@@ -142,6 +191,9 @@ let showAllEvents = false;
 /** Päänäkymän "Päivän varaukset" -osion tapahtuma (eventKey) */
 let focusedEventKeyForDaily = null;
 let dailyBookingsViewMode = "day";
+/** Päänäkymän varauslista: API-tapahtumavaraukset tai kotikäynnit */
+let dailyBookingsSourceMode = "bookings";
+let homeVisitsPageListMode = "day";
 
 function isSupabaseConfigured() {
   return Boolean(supabaseUrl && supabaseAnonKey);
@@ -404,6 +456,21 @@ function getIsoWeekDateKeys(anchorDate) {
   return keys;
 }
 
+/** Päivä = anchorin kalenteripäivä; viikko = sen maanantai–sunnuntai. */
+function getDayOrWeekRangeAroundAnchor(anchorDate, isWeek) {
+  const focusDay = startOfDay(new Date(anchorDate));
+  const rangeStart = isWeek
+    ? new Date(
+        focusDay.getFullYear(),
+        focusDay.getMonth(),
+        focusDay.getDate() - ((focusDay.getDay() + 6) % 7)
+      )
+    : focusDay;
+  const rangeEnd = new Date(rangeStart);
+  rangeEnd.setDate(rangeStart.getDate() + (isWeek ? 7 : 1));
+  return { rangeStart, rangeEnd };
+}
+
 function mapApiBookingStatusBadge(statusRaw) {
   const s = String(statusRaw || "")
     .toLowerCase()
@@ -516,62 +583,86 @@ function renderDailyEventSwitch(focusEvent, events, isWeek) {
   });
 }
 
+function syncDailySourceTabsUi() {
+  if (!dailySourceTabs || dailySourceTabs.length === 0) return;
+  dailySourceTabs.forEach((tab) => {
+    const mode = tab.dataset.dailySource || "bookings";
+    const active = mode === dailyBookingsSourceMode;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+  });
+}
+
 function renderDailyBookings() {
+  syncDailySourceTabsUi();
   if (!dailyBookingsList) return;
 
   const filtered = getFilteredDashboardEvents();
-  if (filtered.length === 0) {
-    dailyBookingsList.innerHTML = `<div class="empty-daily-bookings">Ei tapahtumia — varauslistaa ei näytetä.</div>`;
+  const isWeek = dailyBookingsViewMode === "week";
+
+  if (filtered.length === 0 && dailyBookingsSourceMode !== "homeVisits") {
+    dailyBookingsList.innerHTML = `<div class="empty-daily-bookings">Ei tapahtumia.</div>`;
     if (dailyBookingsContext) dailyBookingsContext.textContent = "";
     if (dailyEventSwitch) dailyEventSwitch.innerHTML = "";
     return;
   }
 
-  if (
-    !focusedEventKeyForDaily ||
-    !filtered.some((e) => eventKey(e) === focusedEventKeyForDaily)
-  ) {
-    focusedEventKeyForDaily = eventKey(filtered[0]);
+  let focusEvent;
+  if (filtered.length === 0) {
+    focusEvent = { startDate: startOfDay(new Date()).toISOString(), location: "", title: "" };
+    if (dailyEventSwitch) dailyEventSwitch.innerHTML = "";
+  } else {
+    if (
+      !focusedEventKeyForDaily ||
+      !filtered.some((e) => eventKey(e) === focusedEventKeyForDaily)
+    ) {
+      focusedEventKeyForDaily = eventKey(filtered[0]);
+    }
+    focusEvent =
+      filtered.find((e) => eventKey(e) === focusedEventKeyForDaily) ?? filtered[0];
+    if (dailyBookingsSourceMode === "bookings") {
+      renderDailyEventSwitch(focusEvent, filtered, isWeek);
+    } else if (dailyEventSwitch) {
+      dailyEventSwitch.innerHTML = "";
+    }
   }
-
-  const focusEvent =
-    filtered.find((e) => eventKey(e) === focusedEventKeyForDaily) ?? filtered[0];
-  const isWeek = dailyBookingsViewMode === "week";
-  renderDailyEventSwitch(focusEvent, filtered, isWeek);
 
   const query = searchInput.value.trim().toLowerCase();
   let rows = [];
-  if (isWeek) {
-    const weekKeys = getIsoWeekDateKeys(new Date(focusEvent.startDate));
-    for (const ev of allEvents) {
-      if (!weekKeys.includes(formatIsoDateKey(new Date(ev.startDate)))) continue;
-      const wkStart = new Date(ev.startDate ?? "");
-      const wkKey = Number.isNaN(wkStart.getTime()) ? "" : formatIsoDateKey(wkStart);
-      const text = `${ev.title ?? ""} ${ev.location} ${formatDateOnly(ev.startDate)} ${wkKey}`
-        .toLowerCase()
-        .trim();
-      if (query && !text.includes(query)) continue;
-      for (const raw of getApiBookingsFromEvent(ev)) {
-        rows.push({ raw, event: ev });
+
+  if (dailyBookingsSourceMode === "bookings") {
+    if (isWeek) {
+      const weekKeys = getIsoWeekDateKeys(new Date(focusEvent.startDate));
+      for (const ev of allEvents) {
+        if (!weekKeys.includes(formatIsoDateKey(new Date(ev.startDate)))) continue;
+        const wkStart = new Date(ev.startDate ?? "");
+        const wkKey = Number.isNaN(wkStart.getTime()) ? "" : formatIsoDateKey(wkStart);
+        const text = `${ev.title ?? ""} ${ev.location} ${formatDateOnly(ev.startDate)} ${wkKey}`
+          .toLowerCase()
+          .trim();
+        if (query && !text.includes(query)) continue;
+        for (const raw of getApiBookingsFromEvent(ev)) {
+          rows.push({ raw, event: ev });
+        }
+      }
+    } else {
+      for (const raw of getApiBookingsFromEvent(focusEvent)) {
+        rows.push({ raw, event: focusEvent });
       }
     }
-  } else {
-    for (const raw of getApiBookingsFromEvent(focusEvent)) {
-      rows.push({ raw, event: focusEvent });
-    }
-  }
 
-  rows = rows
-    .map(({ raw, event }) => {
-      const norm = normalizeApiBookingRow(raw);
-      if (HIDE_TEST_API_BOOKINGS && norm.isTest) return null;
-      const sourceStart = norm.startDate || norm.bookingDate;
-      let instant = parseApiBookingInstant(sourceStart, event.startDate);
-      if (Number.isNaN(instant.getTime())) return null;
-      instant = alignBookingInstantToEventDay(instant, event.startDate);
-      return { kind: "booking", norm, event, instant };
-    })
-    .filter(Boolean);
+    rows = rows
+      .map(({ raw, event }) => {
+        const norm = normalizeApiBookingRow(raw);
+        if (HIDE_TEST_API_BOOKINGS && norm.isTest) return null;
+        const sourceStart = norm.startDate || norm.bookingDate;
+        let instant = parseApiBookingInstant(sourceStart, event.startDate);
+        if (Number.isNaN(instant.getTime())) return null;
+        instant = alignBookingInstantToEventDay(instant, event.startDate);
+        return { kind: "booking", norm, event, instant };
+      })
+      .filter(Boolean);
+  }
 
   const focusDay = startOfDay(new Date(focusEvent.startDate));
   const rangeStart = isWeek
@@ -583,22 +674,34 @@ function renderDailyBookings() {
     : focusDay;
   const rangeEnd = new Date(rangeStart);
   rangeEnd.setDate(rangeStart.getDate() + (isWeek ? 7 : 1));
-  const homeRows = homeVisits
-    .filter((visit) => {
-      const status = String(visit.status || "").toLowerCase();
-      if (status !== "sovittu" && status !== "valmis") return false;
-      const ts = visit.visit_time ?? visit.visit_date;
-      if (!ts) return false;
-      const visitTime = new Date(ts);
-      if (Number.isNaN(visitTime.getTime())) return false;
-      return visitTime >= rangeStart && visitTime < rangeEnd;
-    })
-    .map((visit) => ({
-      kind: "home",
-      visit,
-      instant: new Date(visit.visit_time ?? visit.visit_date),
-    }));
-  rows = [...rows, ...homeRows];
+
+  if (dailyBookingsSourceMode === "homeVisits") {
+    rows = homeVisits
+      .filter((visit) => {
+        const status = String(visit.status || "").toLowerCase();
+        if (status !== "sovittu" && status !== "valmis") return false;
+        const ts = visit.visit_time ?? visit.visit_date;
+        if (!ts) return false;
+        const visitTime = new Date(ts);
+        if (Number.isNaN(visitTime.getTime())) return false;
+        return visitTime >= rangeStart && visitTime < rangeEnd;
+      })
+      .map((visit) => ({
+        kind: "home",
+        visit,
+        instant: new Date(visit.visit_time ?? visit.visit_date),
+      }));
+    if (query) {
+      rows = rows.filter(({ visit }) => {
+        const hay = `${visit.customer_name ?? ""} ${visit.nickname ?? ""} ${visit.address ?? ""} ${
+          visit.phone ?? ""
+        } ${visit.details ?? ""}`
+          .toLowerCase()
+          .trim();
+        return hay.includes(query);
+      });
+    }
+  }
 
   rows.sort((a, b) => {
     const dt = a.instant.getTime() - b.instant.getTime();
@@ -609,14 +712,19 @@ function renderDailyBookings() {
   });
 
   if (dailyBookingsContext) {
-    const ctx = `${focusEvent.location ?? ""} · ${formatDateOnly(focusEvent.startDate)}`;
-    dailyBookingsContext.textContent = `${ctx}${isWeek ? " (koko viikko)" : ""}`;
+    if (dailyBookingsSourceMode === "homeVisits") {
+      dailyBookingsContext.textContent = `${formatDateOnly(rangeStart)}${isWeek ? " · viikko" : ""}`;
+    } else {
+      const loc = String(focusEvent.location ?? "").trim();
+      dailyBookingsContext.textContent = loc
+        ? `${loc} · ${formatDateOnly(focusEvent.startDate)}${isWeek ? " · viikko" : ""}`
+        : `${formatDateOnly(focusEvent.startDate)}${isWeek ? " · viikko" : ""}`;
+    }
   }
 
+  const emptyMsg = dailyBookingsSourceMode === "homeVisits" ? "Ei kotikäyntejä." : "Ei varauksia.";
   if (rows.length === 0) {
-    dailyBookingsList.innerHTML = `<div class="empty-daily-bookings">Ei varauksia${
-      isWeek ? " tällä viikolla" : " tälle päivälle"
-    }.</div>`;
+    dailyBookingsList.innerHTML = `<div class="empty-daily-bookings">${emptyMsg}</div>`;
     return;
   }
 
@@ -636,7 +744,7 @@ function renderDailyBookings() {
           <div class="daily-booking-main">
             <p class="daily-booking-name">${escapeHtml(customer)}</p>
             <p class="daily-booking-sub">${escapeHtml(subLine)}</p>
-            <p class="daily-booking-phone">Puhelin: ${escapeHtml(phone)}</p>
+            <p class="daily-booking-phone">Puh. ${escapeHtml(phone)}</p>
           </div>
         </div>`;
       }
@@ -650,7 +758,7 @@ function renderDailyBookings() {
           <div class="daily-booking-main">
             <p class="daily-booking-name">${escapeHtml(norm.name || "—")}</p>
             <p class="daily-booking-sub">${sub}</p>
-            <p class="daily-booking-phone">Puhelin: ${escapeHtml(phone)}</p>
+            <p class="daily-booking-phone">Puh. ${escapeHtml(phone)}</p>
           </div>
         </div>`;
     })
@@ -786,16 +894,38 @@ function setActiveNav(view) {
   });
 }
 
+function applyHistoryPanelMode() {
+  const isBookings = historyPanelMode === "bookings";
+  historyPanelBookings?.classList.toggle("hidden", !isBookings);
+  historyPanelPastHomeVisits?.classList.toggle("hidden", isBookings);
+  historyModeTabs.forEach((tab) => {
+    const mode = tab.dataset.historyMode;
+    const active = mode === historyPanelMode;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+  });
+}
+
 function switchView(view) {
+  if (!SHOW_CALENDAR_NAV_AND_VIEW && view === "calendar") view = "dashboard";
   activeView = view;
   dashboardView?.classList.toggle("hidden", view !== "dashboard");
-  calendarView?.classList.toggle("hidden", view !== "calendar");
+  calendarView?.classList.toggle(
+    "hidden",
+    !SHOW_CALENDAR_NAV_AND_VIEW || view !== "calendar"
+  );
   homeVisitsView?.classList.toggle("hidden", view !== "homeVisits");
   bookingsView?.classList.toggle("hidden", view !== "bookings");
+  historyView?.classList.toggle("hidden", view !== "history");
   setActiveNav(view);
   if (view === "calendar") renderCalendar();
   if (view === "homeVisits") renderHomeVisits();
   if (view === "bookings") renderBookings();
+  if (view === "history") {
+    applyHistoryPanelMode();
+    renderHistory();
+    renderHomeVisits();
+  }
 }
 
 function getLocalHomeVisits() {
@@ -997,7 +1127,7 @@ function updateBookingEventOptions(preferredEventKey = "", preferredTimeValue = 
   const previousTimeValue = bookingTime?.value || "";
   const events = getEventsForDate(bookingDate.value);
   if (events.length === 0) {
-    bookingEventSelect.innerHTML = '<option value="">Ei tapahtumia valitulla päivällä</option>';
+    bookingEventSelect.innerHTML = '<option value="">Ei tapahtumia</option>';
     bookingEventSelect.value = "";
     buildBookingTimeOptions(null);
     return;
@@ -1195,7 +1325,7 @@ function renderBookings() {
     .filter(isEventBooking)
     .filter((entry) => {
       const haystack =
-        `${entry.customer_name} ${entry.phone ?? ""} ${entry.booking_type ?? ""} ${entry.owner ?? ""} ${entry.event_name ?? ""}`.toLowerCase();
+        `${entry.customer_name} ${entry.phone ?? ""} ${entry.email ?? ""} ${entry.booking_type ?? ""} ${entry.owner ?? ""} ${entry.event_name ?? ""}`.toLowerCase();
       return haystack.includes(query);
     })
     .sort((a, b) => {
@@ -1204,12 +1334,8 @@ function renderBookings() {
       return bCreated - aCreated;
     });
 
-  if (bookingsSubtitle) {
-    bookingsSubtitle.textContent = `Hallinnoi ja merkitse tapahtumavarauksia. Sinulla on ${filtered.length} merkintää.`;
-  }
-
   if (filtered.length === 0) {
-    bookingsBody.innerHTML = '<tr><td colspan="7">Ei varauksia näytettäväksi.</td></tr>';
+    bookingsBody.innerHTML = '<tr><td colspan="8">Ei varauksia.</td></tr>';
     return;
   }
 
@@ -1230,6 +1356,7 @@ function renderBookings() {
           </td>
           <td>${escapeHtml(createdAtLabel)}</td>
           <td>${escapeHtml(entry.phone || "-")}</td>
+          <td>${escapeHtml(entry.email?.trim() ? entry.email.trim() : "-")}</td>
           <td><span class="status-pill ${statusClass}">${getStatusLabel(entry.status)}</span></td>
           <td><span class="name-chip ${ownerClass}" title="${escapeHtml(
         ownerText
@@ -1268,7 +1395,7 @@ async function loadBookings() {
   const { data, error } = await client
     .from("bookings")
     .select(
-      "id, customer_name, phone, booking_type, booking_date, booking_time, event_key, event_name, status, owner, created_at"
+      "id, customer_name, phone, email, booking_type, booking_date, booking_time, event_key, event_name, status, owner, created_at"
     )
     .order("booking_date", { ascending: true })
     .order("booking_time", { ascending: true });
@@ -1372,6 +1499,7 @@ function startBookingEdit(entry) {
   bookingForm.classList.remove("hidden");
   bookingCustomerName.value = entry.customer_name || "";
   if (bookingPhone) bookingPhone.value = entry.phone || "";
+  if (bookingEmail) bookingEmail.value = entry.email || "";
   bookingDate.value = entry.booking_date || "";
   updateBookingEventOptions(entry.event_key || "", entry.booking_time || "");
   renderBookingOwnerOptions(entry.owner || "");
@@ -1472,15 +1600,13 @@ function resetHomeVisitFormState() {
 }
 
 function startHomeVisitEdit(item) {
-  if (!homeVisitForm || !hvCustomerName || !hvAddress || !hvVisitDate || !hvVisitTime || !hvDetails) {
+  if (!homeVisitForm || !hvNickname || !hvVisitDate || !hvVisitTime || !hvDetails) {
     return;
   }
+  if (activeView !== "homeVisits") switchView("homeVisits");
   editingHomeVisitId = item.id;
   homeVisitForm.classList.remove("hidden");
-  hvCustomerName.value = item.customer_name || "";
   renderBookingOwnerOptions(bookingOwner?.value || "", item.nickname || "");
-  if (hvPhone) hvPhone.value = item.phone || "";
-  hvAddress.value = item.address || "";
   const dateObj = new Date(item.visit_time);
   if (!Number.isNaN(dateObj.getTime())) {
     const yyyy = dateObj.getFullYear();
@@ -1497,7 +1623,7 @@ function startHomeVisitEdit(item) {
   hvDetails.value = item.details || "";
   if (saveHomeVisitButton) saveHomeVisitButton.textContent = "Tallenna muutokset";
   if (toggleHomeVisitFormButton) toggleHomeVisitFormButton.textContent = "Peruuta muokkaus";
-  hvCustomerName.focus();
+  hvVisitDate.focus();
 }
 
 async function updateHomeVisitStatus(id, status) {
@@ -1516,7 +1642,7 @@ async function updateHomeVisitStatus(id, status) {
 function renderHomeVisitItems(items, container) {
   if (!container) return;
   if (items.length === 0) {
-    container.innerHTML = '<div class="empty-notes">Ei merkintöjä tässä näkymässä.</div>';
+    container.innerHTML = '<div class="empty-notes">Ei merkintöjä.</div>';
     return;
   }
   container.innerHTML = items
@@ -1603,6 +1729,74 @@ function renderHomeVisitItems(items, container) {
   });
 }
 
+function syncHomeVisitsPageDayWeekTabsUi() {
+  if (!homeVisitsPageDayWeekTabs || homeVisitsPageDayWeekTabs.length === 0) return;
+  homeVisitsPageDayWeekTabs.forEach((tab) => {
+    const mode = tab.dataset.homePageDw === "week" ? "week" : "day";
+    const active = mode === homeVisitsPageListMode;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+  });
+}
+
+function renderHomeVisitsPageDailyList() {
+  syncHomeVisitsPageDayWeekTabsUi();
+  if (!homeVisitsPageDailyList) return;
+  const anchor = new Date();
+  const isWeek = homeVisitsPageListMode === "week";
+  const { rangeStart, rangeEnd } = getDayOrWeekRangeAroundAnchor(anchor, isWeek);
+
+  let rows = homeVisits
+    .filter((visit) => {
+      const status = String(visit.status || "").toLowerCase();
+      if (status !== "sovittu" && status !== "valmis") return false;
+      const ts = visit.visit_time ?? visit.visit_date;
+      if (!ts) return false;
+      const visitTime = new Date(ts);
+      if (Number.isNaN(visitTime.getTime())) return false;
+      return visitTime >= rangeStart && visitTime < rangeEnd;
+    })
+    .map((visit) => ({
+      kind: "home",
+      visit,
+      instant: new Date(visit.visit_time ?? visit.visit_date),
+    }));
+
+  rows.sort((a, b) => a.instant.getTime() - b.instant.getTime());
+
+  if (homeVisitsPageRangeContext) {
+    homeVisitsPageRangeContext.textContent = `${formatDateOnly(rangeStart)}${isWeek ? " · viikko" : ""}`;
+  }
+
+  if (rows.length === 0) {
+    homeVisitsPageDailyList.innerHTML = `<div class="empty-daily-bookings">Ei kotikäyntejä.</div>`;
+    return;
+  }
+
+  const html = rows
+    .map((row) => {
+      const visit = row.visit;
+      const timeStr = formatBookingTimeFi(row.instant);
+      const customer = String(visit.customer_name || visit.nickname || "Kotikäynti").trim();
+      const phone = String(visit.phone || "").trim() || "-";
+      const address = String(visit.address || "").trim();
+      const extra = isWeek ? `${formatDateOnly(row.instant)} · Kotikäynti` : "Kotikäynti";
+      const subLine = [extra, address].filter(Boolean).join(" · ");
+      return `
+        <div class="daily-booking-row daily-booking-row--home">
+          <div class="daily-booking-time">${escapeHtml(timeStr)}</div>
+          <div class="daily-booking-main">
+            <p class="daily-booking-name">${escapeHtml(customer)}</p>
+            <p class="daily-booking-sub">${escapeHtml(subLine)}</p>
+            <p class="daily-booking-phone">Puh. ${escapeHtml(phone)}</p>
+          </div>
+        </div>`;
+    })
+    .join("");
+
+  homeVisitsPageDailyList.innerHTML = html;
+}
+
 function renderHomeVisits() {
   const now = new Date();
   const today = startOfDay(now);
@@ -1621,6 +1815,7 @@ function renderHomeVisits() {
   renderHomeVisitItems(futureItems, futureHomeVisitsList);
   renderHomeVisitItems(todayItems, todayHomeVisitsList);
   renderHomeVisitItems(pastItems, pastHomeVisitsList);
+  renderHomeVisitsPageDailyList();
 }
 
 function isCancelledApiBookingStatus(statusRaw) {
@@ -1799,9 +1994,9 @@ function renderOverviewStats(bookingsList = bookings) {
   todayTargetValue.textContent = String(TODAY_TARGET);
 
   if (todayCount >= TODAY_TARGET) {
-    chartCaption.textContent = `Tavoite ylitetty ${todayCount - TODAY_TARGET} varauksella`;
+    chartCaption.textContent = `+${todayCount - TODAY_TARGET}`;
   } else {
-    chartCaption.textContent = `Vielä ${TODAY_TARGET - todayCount} varausta tavoitteeseen`;
+    chartCaption.textContent = `${TODAY_TARGET - todayCount} vajaa`;
   }
 
   const rangeLength = CHART_END_HOUR - CHART_START_HOUR + 1;
@@ -1837,8 +2032,7 @@ function renderOverviewStats(bookingsList = bookings) {
   if (streakValue && streakLabel) {
     const streak = getCurrentStreak(dayCountMap);
     streakValue.textContent = String(streak);
-    streakLabel.textContent =
-      streak === 1 ? "peräkkäinen päivä varauksia" : "peräkkäistä päivää varauksia";
+    streakLabel.textContent = streak === 1 ? "päivä" : "päivää";
   }
 
   if (
@@ -1870,9 +2064,7 @@ function renderOverviewStats(bookingsList = bookings) {
   const weekTarget = WEEKDAY_TARGET * 4;
   weekTotalText.textContent = `${weekTotal} / ${weekTarget}`;
   weekProgressText.textContent =
-    weekTotal >= weekTarget
-      ? `Viikkotavoite ylitetty ${weekTotal - weekTarget} varauksella`
-      : `${weekTarget - weekTotal} varausta viikkotavoitteeseen`;
+    weekTotal >= weekTarget ? `+${weekTotal - weekTarget}` : `${weekTarget - weekTotal} vajaa`;
   weekMonVal.textContent = String(counts[0]);
   weekTueVal.textContent = String(counts[1]);
   weekWedVal.textContent = String(counts[2]);
@@ -1904,7 +2096,7 @@ function renderOverviewStats(bookingsList = bookings) {
   if (weekBestValue && weekBestLabel) {
     const best = Math.max(...counts, 0);
     weekBestValue.textContent = String(best);
-    weekBestLabel.textContent = "varauksen päiväkohtainen ennätys";
+    weekBestLabel.textContent = "max / pv";
   }
 }
 
@@ -1935,8 +2127,7 @@ function updateNotesFormAvailability() {
 function renderNoteCards(rows) {
   notesTitle.textContent = `Merkinnät (${rows.length})`;
   if (rows.length === 0) {
-    notesList.innerHTML =
-      '<div class="empty-notes">Ei vielä merkintöjä. Lisää ensimmäinen merkintä tästä tapahtumasta.</div>';
+    notesList.innerHTML = '<div class="empty-notes">Ei merkintöjä.</div>';
     return;
   }
 
@@ -1975,9 +2166,8 @@ function renderNoteCards(rows) {
 
 function renderHistory() {
   const eventBookings = bookings.filter(isEventBooking);
-  historyStatus.textContent = `${eventBookings.length} tapahtumavarausta historiassa`;
   if (eventBookings.length === 0) {
-    historyList.innerHTML = '<div class="empty-notes">Ei vielä tapahtumavarauksia.</div>';
+    historyList.innerHTML = '<div class="empty-notes">Ei varauksia.</div>';
     return;
   }
   const sorted = [...eventBookings].sort((a, b) => {
@@ -2036,11 +2226,11 @@ async function loadNotesForEvent(event) {
   const client = getSupabase();
   if (!client) {
     notesList.innerHTML =
-      '<div class="empty-notes">Supabase ei ole vielä käytössä. Aseta ympäristömuuttujat SUPABASE_URL ja SUPABASE_ANON_KEY (Netlify tai paikallinen .env) ja tee uusi build.</div>';
+      '<div class="empty-notes">Supabase ei käytössä (puuttuvat URL / avain).</div>';
     return;
   }
 
-  notesList.innerHTML = '<div class="empty-notes">Ladataan merkintöjä...</div>';
+  notesList.innerHTML = '<div class="empty-notes">Ladataan…</div>';
   await refreshAllNotesData();
   renderNoteCards(notesByEventKey.get(eventKey(event)) ?? []);
 }
@@ -2068,8 +2258,7 @@ function renderDrawerSlotGrid(event) {
 
   const eventStart = new Date(event?.startDate ?? "");
   if (Number.isNaN(eventStart.getTime())) {
-    drawerSlotList.innerHTML =
-      '<p class="drawer-slots-empty">Tapahtuman alkuaikaa ei voitu tulkita.</p>';
+    drawerSlotList.innerHTML = '<p class="drawer-slots-empty">Aikaa ei saatu.</p>';
     return;
   }
 
@@ -2092,7 +2281,7 @@ function renderDrawerSlotGrid(event) {
     0
   );
   if (rangeEnd <= rangeStart) {
-    drawerSlotList.innerHTML = '<p class="drawer-slots-empty">Ei näytettäviä aikoja.</p>';
+    drawerSlotList.innerHTML = '<p class="drawer-slots-empty">Ei aikoja.</p>';
     return;
   }
 
@@ -2120,7 +2309,7 @@ function renderDrawerSlotGrid(event) {
   }
 
   if (slotStarts.length === 0) {
-    drawerSlotList.innerHTML = '<p class="drawer-slots-empty">Ei näytettäviä aikoja.</p>';
+    drawerSlotList.innerHTML = '<p class="drawer-slots-empty">Ei aikoja.</p>';
     return;
   }
 
@@ -2135,7 +2324,7 @@ function renderDrawerSlotGrid(event) {
       const badgeClass = taken
         ? "drawer-slot-badge drawer-slot-badge--busy"
         : "drawer-slot-badge drawer-slot-badge--free";
-      const badgeText = taken ? "EI SAATAVILLA" : "VAPAA";
+      const badgeText = taken ? "Varattu" : "Vapaa";
       return `
       <div class="${rowClass}">
         <span class="drawer-slot-time">${escapeHtml(label)}</span>
@@ -2149,23 +2338,23 @@ function renderDrawer(event) {
   const metrics = getDashboardEventMetrics(event);
   drawerTitle.textContent = event.title;
   drawerMeta.innerHTML = `
-    <div class="meta-row"><span class="meta-label">Sijainti</span><span class="meta-value">${escapeHtml(event.location)}</span></div>
-    <div class="meta-row"><span class="meta-label">Päivä ja aika</span><span class="meta-value">${formatDateTime(
+    <div class="meta-row"><span class="meta-label">Paikka</span><span class="meta-value">${escapeHtml(event.location)}</span></div>
+    <div class="meta-row"><span class="meta-label">Aika</span><span class="meta-value">${formatDateTime(
       event.startDate
     )}</span></div>
-    <div class="meta-row"><span class="meta-label">Varattu yhteensä</span><span class="meta-value">${
+    <div class="meta-row"><span class="meta-label">Yhteensä</span><span class="meta-value">${
       metrics.bookedTotal
     }</span></div>
-    <div class="meta-row"><span class="meta-label">Dummy-varaukset</span><span class="meta-value">${
+    <div class="meta-row"><span class="meta-label">Dummy</span><span class="meta-value">${
       metrics.bookedFake
     }</span></div>
-    <div class="meta-row"><span class="meta-label">Oikeat varaukset</span><span class="meta-value">${
+    <div class="meta-row"><span class="meta-label">Varatut</span><span class="meta-value">${
       metrics.bookedReal
     }</span></div>
-    <div class="meta-row"><span class="meta-label">Vapaita paikkoja</span><span class="meta-value">${
+    <div class="meta-row"><span class="meta-label">Vapaana</span><span class="meta-value">${
       metrics.remainingReal
     }</span></div>
-    <div class="meta-row"><span class="meta-label">Manuaaliset varaukset</span><span class="meta-value">${
+    <div class="meta-row"><span class="meta-label">Käsintehty</span><span class="meta-value">${
       metrics.manualCount
     }</span></div>
   `;
@@ -2198,13 +2387,14 @@ function renderTable() {
 
   if (filtered.length === 0) {
     eventsBody.innerHTML = `
-      <div class="empty-notes">Ei tuloksia valitulla haulla.</div>
+      <div class="empty-notes">Ei osumia.</div>
     `;
     if (toggleEventsButton) toggleEventsButton.classList.add("hidden");
-    statusText.textContent = "Ei tapahtumia näytettävänä.";
+    statusText.textContent = "Ei tapahtumia.";
     focusedEventKeyForDaily = null;
     renderDailyBookings();
     syncDailyViewTabsUi();
+    syncDailySourceTabsUi();
     return;
   }
 
@@ -2236,16 +2426,16 @@ function renderTable() {
           </div>
           <p class="event-progress-value"><span>${bookedReal}</span> / ${target}</p>
         </div>
-        <div class="event-progress-bar" role="img" aria-label="Oikeat varaukset ${bookedReal} / ${target}, päivätavoite 12 merkitty katkoviivalla">
+        <div class="event-progress-bar" role="img" aria-label="${bookedReal} / ${target}, tavoiteviiva 12">
           <div class="event-progress-fill ${progressClass}" style="width: ${progressPct.toFixed(1)}%"></div>
-          <span class="event-progress-goal-marker" style="left: ${goalMarkPct.toFixed(2)}%;" title="12 varauksen päivätavoite"></span>
-          <span class="event-progress-target">Tavoite ${target}</span>
+          <span class="event-progress-goal-marker" style="left: ${goalMarkPct.toFixed(2)}%;" title="12 / pv"></span>
+          <span class="event-progress-target">${target}</span>
         </div>
         <div class="event-progress-meta">
-          <span>Yhteensä ${bookedTotal}</span>
-          <span>Dummy-varaukset ${bookedFake}</span>
-          ${manualCount > 0 ? `<span>Manuaaliset ${manualCount}</span>` : ""}
-          <span>Vapaita ${remainingReal}</span>
+          <span>Yht. ${bookedTotal}</span>
+          <span>Dummy ${bookedFake}</span>
+          ${manualCount > 0 ? `<span>Käs. ${manualCount}</span>` : ""}
+          <span>Vap. ${remainingReal}</span>
           <span class="event-progress-arrow">›</span>
         </div>
       </article>
@@ -2257,14 +2447,12 @@ function renderTable() {
   if (toggleEventsButton) {
     if (filtered.length > 4) {
       toggleEventsButton.classList.remove("hidden");
-      toggleEventsButton.textContent = showAllEvents
-        ? "Näytä vain 4 ylimpää"
-        : `Katso kaikki (${filtered.length})`;
+      toggleEventsButton.textContent = showAllEvents ? "Vain 4" : `Kaikki (${filtered.length})`;
     } else {
       toggleEventsButton.classList.add("hidden");
     }
   }
-  statusText.textContent = `Näytetään ${visibleEvents.length} / ${filtered.length} tapahtumaa.`;
+  statusText.textContent = `${visibleEvents.length} / ${filtered.length}`;
 
   eventsBody.querySelectorAll(".event-progress-item").forEach((item) => {
     item.addEventListener("click", () => {
@@ -2279,21 +2467,22 @@ function renderTable() {
 
   renderDailyBookings();
   syncDailyViewTabsUi();
+  syncDailySourceTabsUi();
 }
 
 async function loadData() {
   if (!appStarted) return;
-  statusText.textContent = "Päivitetään tietoja...";
+  statusText.textContent = "Ladataan…";
 
   try {
     const response = await fetch(BOOKERS_API_URL, { cache: "no-store" });
     if (!response.ok) {
-      throw new Error(`HTTP virhe: ${response.status}`);
+      throw new Error(`HTTP ${response.status}`);
     }
 
     const data = await response.json();
     if (!data.ok || !Array.isArray(data.events)) {
-      throw new Error("Vastaus oli virheellisessa muodossa.");
+      throw new Error("Virheellinen vastaus.");
     }
 
     generatedAt = data.generatedAt ? new Date(data.generatedAt) : new Date();
@@ -2306,7 +2495,7 @@ async function loadData() {
     renderCalendar();
     updateBookingEventOptions();
     renderBookings();
-    updatedText.textContent = `Lähde päivitetty: ${formatDateTime(generatedAt)}`;
+    updatedText.textContent = formatDateTime(generatedAt);
 
     if (selectedEvent) {
       const updatedEvent = allEvents.find(
@@ -2322,10 +2511,10 @@ async function loadData() {
       }
     }
   } catch (error) {
-    statusText.textContent = `Virhe datan haussa: ${error.message}`;
-    updatedText.textContent = "Yritetään uudelleen automaattisesti.";
+    statusText.textContent = `Virhe: ${error.message}`;
+    updatedText.textContent = "";
     eventsBody.innerHTML = `
-      <div class="empty-notes">Datan haku epäonnistui. Tarkista yhteys ja yritä uudelleen.</div>
+      <div class="empty-notes">Lataus epäonnistui.</div>
     `;
   }
 }
@@ -2339,6 +2528,24 @@ dailyViewTabs.forEach((tab) => {
     renderDailyBookings();
   });
 });
+
+dailySourceTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    const next = tab.dataset.dailySource;
+    if (!next || next === dailyBookingsSourceMode) return;
+    dailyBookingsSourceMode = next;
+    renderDailyBookings();
+  });
+});
+
+homeVisitsPageDayWeekTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    homeVisitsPageListMode = tab.dataset.homePageDw === "week" ? "week" : "day";
+    syncHomeVisitsPageDayWeekTabsUi();
+    renderHomeVisitsPageDailyList();
+  });
+});
+
 if (toggleEventsButton) {
   toggleEventsButton.addEventListener("click", () => {
     showAllEvents = !showAllEvents;
@@ -2378,25 +2585,6 @@ if (addBookingOwnerProfileButton) {
     if (bookingOwner) bookingOwner.value = name;
   });
 }
-if (addHomeVisitProfileButton) {
-  addHomeVisitProfileButton.addEventListener("click", async () => {
-    const input = window.prompt("Anna uuden profiilin nimi");
-    const name = normalizeOwnerName(input);
-    if (!name) return;
-    addHomeVisitProfileButton.disabled = true;
-    const result = await createBookingOwnerProfile(name);
-    addHomeVisitProfileButton.disabled = false;
-    if (!result.ok) {
-      alert(result.message || "Profiilin luonti epäonnistui.");
-      return;
-    }
-    if (result.message) {
-      alert(result.message);
-    }
-    if (hvNickname) hvNickname.value = name;
-    syncOwnerProfileActionState(hvNickname, deleteHomeVisitProfileButton);
-  });
-}
 if (deleteBookingOwnerProfileButton) {
   deleteBookingOwnerProfileButton.addEventListener("click", async () => {
     const selectedName = normalizeOwnerName(bookingOwner?.value);
@@ -2416,6 +2604,25 @@ if (deleteBookingOwnerProfileButton) {
     if (result.message) {
       alert(result.message);
     }
+  });
+}
+if (addHomeVisitProfileButton) {
+  addHomeVisitProfileButton.addEventListener("click", async () => {
+    const input = window.prompt("Anna uuden profiilin nimi");
+    const name = normalizeOwnerName(input);
+    if (!name) return;
+    addHomeVisitProfileButton.disabled = true;
+    const result = await createBookingOwnerProfile(name);
+    addHomeVisitProfileButton.disabled = false;
+    if (!result.ok) {
+      alert(result.message || "Profiilin luonti epäonnistui.");
+      return;
+    }
+    if (result.message) {
+      alert(result.message);
+    }
+    if (hvNickname) hvNickname.value = name;
+    syncOwnerProfileActionState(hvNickname, deleteHomeVisitProfileButton);
   });
 }
 if (deleteHomeVisitProfileButton) {
@@ -2449,7 +2656,6 @@ if (hvNickname) {
     syncOwnerProfileActionState(hvNickname, deleteHomeVisitProfileButton)
   );
 }
-
 buildBookingTimeOptions();
 renderBookingOwnerOptions();
 buildHomeVisitTimeOptions();
@@ -2458,6 +2664,17 @@ navItems.forEach((item) => {
     const view = item.dataset.view;
     if (!view) return;
     switchView(view);
+  });
+});
+
+historyModeTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    const mode = tab.dataset.historyMode;
+    if (!mode || mode === historyPanelMode) return;
+    historyPanelMode = mode;
+    applyHistoryPanelMode();
+    if (mode === "pastHomeVisits") renderHomeVisits();
+    if (mode === "bookings") renderHistory();
   });
 });
 
@@ -2504,25 +2721,28 @@ if (toggleHomeVisitFormButton && homeVisitForm) {
 if (homeVisitForm) {
   homeVisitForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (!hvCustomerName || !hvAddress || !hvVisitDate || !hvVisitTime || !hvDetails) return;
-    const customerName = hvCustomerName.value.trim();
-    const nickname = hvNickname?.value.trim() ?? "";
-    const address = hvAddress.value.trim();
-    const phone = hvPhone?.value.trim() ?? "";
+    if (!hvNickname || !hvVisitDate || !hvVisitTime || !hvDetails) return;
+    const nickname = normalizeOwnerName(hvNickname.value);
     const visitDate = hvVisitDate.value;
     const visitTime = hvVisitTime.value;
     const details = hvDetails.value.trim();
-    if (!customerName || !address || !visitDate || !visitTime || !details) return;
+    if (!nickname || !visitDate || !visitTime || !details) return;
+
+    const existing = editingHomeVisitId
+      ? homeVisits.find((v) => v.id === editingHomeVisitId)
+      : null;
+    const preservedPhone = String(existing?.phone ?? "").trim();
+    const preservedAddr = String(existing?.address ?? "").trim();
 
     if (saveHomeVisitButton) saveHomeVisitButton.disabled = true;
     const payload = {
-      customer_name: customerName,
+      customer_name: nickname,
       nickname,
-      phone,
-      address,
+      phone: preservedPhone,
+      address: preservedAddr || "-",
       visit_time: new Date(`${visitDate}T${visitTime}:00`).toISOString(),
       details,
-      status: "sovittu",
+      status: existing?.status ?? "sovittu",
     };
     const result = editingHomeVisitId
       ? await updateHomeVisit(editingHomeVisitId, payload)
@@ -2564,6 +2784,7 @@ if (bookingForm) {
     const selectedTime = bookingTime.value;
     const type = "Tapahtumavaraus";
     const phone = bookingPhone?.value.trim() ?? "";
+    const email = bookingEmail?.value.trim() ?? "";
     const status = bookingStatus?.value || "odottaa";
     const owner = bookingOwner?.value.trim() ?? "";
     const selectedKey = bookingEventSelect?.value ?? "";
@@ -2578,6 +2799,7 @@ if (bookingForm) {
     const payload = {
       customer_name: customerName,
       phone,
+      email: email || null,
       booking_type: type,
       booking_date: date,
       booking_time: selectedTime,
@@ -2624,10 +2846,12 @@ if (deleteBookingButton) {
   });
 }
 
-refreshButton.addEventListener("click", () => {
-  if (!appStarted) return;
-  void loadData();
-});
+if (refreshButton) {
+  refreshButton.addEventListener("click", () => {
+    if (!appStarted) return;
+    void loadData();
+  });
+}
 overlay.addEventListener("click", closeDrawer);
 closeDrawerButton.addEventListener("click", closeDrawer);
 addNoteButton.addEventListener("click", () => {
@@ -2712,7 +2936,7 @@ function tryUnlockWithPin() {
     pinError.classList.add("hidden");
     startDashboard();
   } else {
-    pinError.textContent = "Virheellinen PIN-koodi.";
+    pinError.textContent = "Väärin.";
     pinError.classList.remove("hidden");
     pinInput.value = "";
     pinInput.focus();
