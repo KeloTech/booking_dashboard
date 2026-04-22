@@ -845,9 +845,9 @@ function getDashboardEventMetrics(event, manualCountMap = null) {
   const bookedFake = Number(event.bookedFake) || 0;
   const apiRemainingReal = Number(event.remainingReal) || 0;
   const target = Math.max(apiBookedReal + apiRemainingReal, 1);
-  const bookedReal = apiBookedReal + manualCount;
-  const bookedTotal = apiBookedTotal + manualCount;
-  const remainingReal = Math.max(0, apiRemainingReal - manualCount);
+  const bookedReal = apiBookedReal;
+  const bookedTotal = apiBookedTotal;
+  const remainingReal = apiRemainingReal;
   return {
     bookedReal,
     bookedTotal,
@@ -1252,6 +1252,45 @@ function getApiBookingRangesForEvent(event) {
   return ranges;
 }
 
+function getManualBookingRangesForEvent(event, options = {}) {
+  const ranges = [];
+  const key = eventKey(event);
+  const excludeBookingId = String(options.excludeBookingId || "").trim();
+  const eventStart = new Date(event?.startDate ?? "");
+  if (!key || Number.isNaN(eventStart.getTime())) return ranges;
+
+  bookings.forEach((entry) => {
+    if (!isActiveEventBooking(entry)) return;
+    if (String(entry.event_key || "").trim() !== key) return;
+    if (excludeBookingId && String(entry.id || "").trim() === excludeBookingId) return;
+    const timeValue = String(entry.booking_time || "").trim();
+    if (!/^\d{1,2}:\d{2}$/.test(timeValue)) return;
+    const [hh, mm] = timeValue.split(":").map((value) => Number(value));
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return;
+    const start = new Date(
+      eventStart.getFullYear(),
+      eventStart.getMonth(),
+      eventStart.getDate(),
+      hh,
+      mm,
+      0,
+      0
+    );
+    if (Number.isNaN(start.getTime())) return;
+    const end = addMinutesToDate(start, DRAWER_SLOT_STEP_MIN);
+    ranges.push({ start, end });
+  });
+
+  return ranges;
+}
+
+function getCombinedBookingRangesForEvent(event, options = {}) {
+  return [
+    ...getApiBookingRangesForEvent(event),
+    ...getManualBookingRangesForEvent(event, options),
+  ];
+}
+
 function buildBookingTimeOptions(selectedEvent = null, preferredTime = "") {
   if (!bookingTime) return;
   if (!selectedEvent) {
@@ -1282,7 +1321,10 @@ function buildBookingTimeOptions(selectedEvent = null, preferredTime = "") {
     0,
     0
   );
-  const bookingRanges = getApiBookingRangesForEvent(selectedEvent);
+  const excludeBookingId = editingBookingId ? String(editingBookingId).trim() : "";
+  const bookingRanges = getCombinedBookingRangesForEvent(selectedEvent, {
+    excludeBookingId,
+  });
   const options = ['<option value="">Valitse aika</option>'];
   let firstFreeValue = "";
   let preferredExists = false;
@@ -1502,6 +1544,7 @@ function resetBookingFormState() {
   if (saveBookingButton) saveBookingButton.textContent = "Tallenna varaus";
   if (toggleBookingFormButton) toggleBookingFormButton.textContent = "+ Uusi varaus";
   if (deleteBookingButton) deleteBookingButton.classList.add("hidden");
+  if (bookingStatus) bookingStatus.value = "odottaa";
   renderBookingOwnerOptions();
 }
 
@@ -1832,14 +1875,6 @@ function isCancelledApiBookingStatus(statusRaw) {
 
 function getCalendarDailyCountMaps() {
   const bookingMap = new Map();
-
-  bookings.filter(isActiveEventBooking).forEach((entry) => {
-    if (!entry.booking_date) return;
-    const date = new Date(`${entry.booking_date}T12:00:00`);
-    if (Number.isNaN(date.getTime())) return;
-    const key = formatIsoDateKey(startOfDay(date));
-    bookingMap.set(key, (bookingMap.get(key) ?? 0) + 1);
-  });
 
   /* API: yksi tapahtuma = yksi päivä — lasketaan tapahtuman paikalliseen päivään, ei bookingDate-ISO:n
    * UTC-käännökseen (muuten luvut voivat siirtyä väärälle kuukausisolulle). */
@@ -2290,19 +2325,7 @@ function renderDrawerSlotGrid(event) {
     return;
   }
 
-  const realRanges = [];
-  for (const raw of getApiBookingsFromEvent(event)) {
-    if (!isApiBookingRealOccupancy(raw)) continue;
-    const norm = normalizeApiBookingRow(raw);
-    if (!norm.startDate || !norm.endDate) continue;
-    let bookingStart = parseApiBookingInstant(norm.startDate, event.startDate);
-    let bookingEnd = parseApiBookingInstant(norm.endDate, event.startDate);
-    if (Number.isNaN(bookingStart.getTime()) || Number.isNaN(bookingEnd.getTime())) continue;
-    bookingStart = alignBookingInstantToEventDay(bookingStart, event.startDate);
-    bookingEnd = alignBookingInstantToEventDay(bookingEnd, event.startDate);
-    if (bookingEnd <= bookingStart) continue;
-    realRanges.push({ start: bookingStart, end: bookingEnd });
-  }
+  const realRanges = getCombinedBookingRangesForEvent(event);
 
   const slotStarts = [];
   for (
@@ -2799,6 +2822,35 @@ if (bookingForm) {
     if (!customerName || !date || !selectedTime) {
       alert("Valitse aika listasta.");
       return;
+    }
+    if (eventOfDay) {
+      const [hhRaw, mmRaw] = selectedTime.split(":");
+      const hh = Number(hhRaw);
+      const mm = Number(mmRaw);
+      if (Number.isFinite(hh) && Number.isFinite(mm)) {
+        const eventStart = new Date(eventOfDay.startDate ?? "");
+        if (!Number.isNaN(eventStart.getTime())) {
+          const slotStart = new Date(
+            eventStart.getFullYear(),
+            eventStart.getMonth(),
+            eventStart.getDate(),
+            hh,
+            mm,
+            0,
+            0
+          );
+          const slotEnd = addMinutesToDate(slotStart, DRAWER_SLOT_STEP_MIN);
+          const excludeBookingId = editingBookingId ? String(editingBookingId).trim() : "";
+          const isTaken = getCombinedBookingRangesForEvent(eventOfDay, {
+            excludeBookingId,
+          }).some((range) => range.start < slotEnd && range.end > slotStart);
+          if (isTaken) {
+            alert("Valittu aika on jo varattu. Valitse toinen aika.");
+            buildBookingTimeOptions(eventOfDay, selectedTime);
+            return;
+          }
+        }
+      }
     }
     if (saveBookingButton) saveBookingButton.disabled = true;
     const payload = {
