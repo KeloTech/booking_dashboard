@@ -361,6 +361,12 @@ const DRAWER_SLOT_STEP_MIN = 15;
 const DRAWER_SLOT_MAX_ROWS = 128;
 const DRAWER_VISIBLE_START_HOUR = 10;
 const DRAWER_VISIBLE_END_HOUR = 19;
+const BOOKING_BREAK_RANGES = [
+  { start: "11:30", end: "11:45" },
+  { start: "13:00", end: "14:00" },
+  { start: "16:00", end: "16:15" },
+  { start: "18:00", end: "18:15" },
+];
 
 function addMinutesToDate(d, mins) {
   const x = new Date(d.getTime());
@@ -387,6 +393,26 @@ function ceilToQuarterHour(d) {
   }
   x.setMinutes(mins, 0, 0);
   return x;
+}
+
+function timeToMinutes(timeValue) {
+  const [hhRaw, mmRaw] = String(timeValue || "").split(":");
+  const hh = Number(hhRaw);
+  const mm = Number(mmRaw);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return NaN;
+  return hh * 60 + mm;
+}
+
+function isBreakSlot(slotStart, slotEnd) {
+  if (!(slotStart instanceof Date) || !(slotEnd instanceof Date)) return false;
+  const startMinutes = slotStart.getHours() * 60 + slotStart.getMinutes();
+  const endMinutes = slotEnd.getHours() * 60 + slotEnd.getMinutes();
+  return BOOKING_BREAK_RANGES.some((range) => {
+    const breakStart = timeToMinutes(range.start);
+    const breakEnd = timeToMinutes(range.end);
+    if (!Number.isFinite(breakStart) || !Number.isFinite(breakEnd)) return false;
+    return breakStart < endMinutes && breakEnd > startMinutes;
+  });
 }
 
 function parseApiBookingInstant(bookingDateRaw, fallbackEventStart) {
@@ -1336,15 +1362,17 @@ function buildBookingTimeOptions(selectedEvent = null, preferredTime = "") {
   ) {
     const slotEnd = addMinutesToDate(slotStart, DRAWER_SLOT_STEP_MIN);
     const value = formatSelectTimeValue(slotStart);
+    const inBreak = isBreakSlot(slotStart, slotEnd);
     const isTaken = bookingRanges.some((range) => range.start < slotEnd && range.end > slotStart);
+    const isUnavailable = isTaken || inBreak;
     const isPreferred = preferredTime === value;
-    if (!isTaken && !firstFreeValue) firstFreeValue = value;
+    if (!isUnavailable && !firstFreeValue) firstFreeValue = value;
     if (isPreferred) preferredExists = true;
-    const marker = isTaken ? "🔴" : "🟢";
-    const suffix = isTaken ? "Varattu" : "Vapaa";
+    const marker = isUnavailable ? "🔴" : "🟢";
+    const suffix = inBreak ? "Tauko" : isTaken ? "Varattu" : "Vapaa";
     const selectedAttr = isPreferred ? ' selected="selected"' : "";
-    const disabledAttr = isTaken && !isPreferred ? ' disabled="disabled"' : "";
-    const styleAttr = isTaken
+    const disabledAttr = isUnavailable && !isPreferred ? ' disabled="disabled"' : "";
+    const styleAttr = isUnavailable
       ? ' style="color:#8b1e2d;background:#fde8eb;"'
       : ' style="color:#1f5f2a;background:#e8f7e9;"';
     options.push(
@@ -2344,15 +2372,17 @@ function renderDrawerSlotGrid(event) {
   drawerSlotList.innerHTML = slotStarts
     .map((slotStart) => {
       const slotEnd = addMinutesToDate(slotStart, DRAWER_SLOT_STEP_MIN);
+      const inBreak = isBreakSlot(slotStart, slotEnd);
       const taken = realRanges.some(
         (bookingRange) => bookingRange.start < slotEnd && bookingRange.end > slotStart
       );
+      const unavailable = taken || inBreak;
       const label = `${formatBookingTimeFi(slotStart)} - ${formatBookingTimeFi(slotEnd)}`;
-      const rowClass = taken ? "drawer-slot-row drawer-slot-row--busy" : "drawer-slot-row";
-      const badgeClass = taken
+      const rowClass = unavailable ? "drawer-slot-row drawer-slot-row--busy" : "drawer-slot-row";
+      const badgeClass = unavailable
         ? "drawer-slot-badge drawer-slot-badge--busy"
         : "drawer-slot-badge drawer-slot-badge--free";
-      const badgeText = taken ? "Varattu" : "Vapaa";
+      const badgeText = inBreak ? "Tauko" : taken ? "Varattu" : "Vapaa";
       return `
       <div class="${rowClass}">
         <span class="drawer-slot-time">${escapeHtml(label)}</span>
@@ -2840,6 +2870,11 @@ if (bookingForm) {
             0
           );
           const slotEnd = addMinutesToDate(slotStart, DRAWER_SLOT_STEP_MIN);
+          if (isBreakSlot(slotStart, slotEnd)) {
+            alert("Valittu aika osuu taukoon. Valitse toinen aika.");
+            buildBookingTimeOptions(eventOfDay, selectedTime);
+            return;
+          }
           const excludeBookingId = editingBookingId ? String(editingBookingId).trim() : "";
           const isTaken = getCombinedBookingRangesForEvent(eventOfDay, {
             excludeBookingId,
