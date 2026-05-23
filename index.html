@@ -80,51 +80,42 @@
           </section>
 
           <section id="dashboardWeekMetricsSection" class="weekly-layout">
-            <article id="weeklyWrapCard" class="weekly-wrap card">
-          <div class="weekly-head">
-            <h2>Ma–to</h2>
-            <p id="weekTotalText">0 / 48</p>
-          </div>
-          <div class="weekly-chart-area">
-          <div id="weekTargetLine" class="week-target-line"></div>
-          <div class="weekly-grid">
-            <div class="week-col">
-              <span id="weekMonVal" class="week-count">0</span>
-              <div class="week-bar-bg"><div id="weekMonBar" class="week-bar"></div></div>
-              <span class="week-day">Ma</span>
-            </div>
-            <div class="week-col">
-              <span id="weekTueVal" class="week-count">0</span>
-              <div class="week-bar-bg"><div id="weekTueBar" class="week-bar"></div></div>
-              <span class="week-day">Ti</span>
-            </div>
-            <div class="week-col">
-              <span id="weekWedVal" class="week-count">0</span>
-              <div class="week-bar-bg"><div id="weekWedBar" class="week-bar"></div></div>
-              <span class="week-day">Ke</span>
-            </div>
-            <div class="week-col">
-              <span id="weekThuVal" class="week-count">0</span>
-              <div class="week-bar-bg"><div id="weekThuBar" class="week-bar"></div></div>
-              <span class="week-day">To</span>
-            </div>
-          </div>
-          </div>
-          <p id="weekProgressText" class="week-progress">—</p>
+            <article id="weeklyWrapCard" class="weekly-pulse card" aria-label="Viikon varaukset">
+              <header class="weekly-pulse-header">
+                <div class="weekly-pulse-title">
+                  <span class="weekly-pulse-dot" aria-hidden="true"></span>
+                  <span class="weekly-pulse-label">Varaukset</span>
+                </div>
+                <div class="weekly-pulse-readout">
+                  <span id="weeklyPulseValue" class="weekly-pulse-value">0</span>
+                  <span class="weekly-pulse-suffix">kpl</span>
+                </div>
+              </header>
+              <div id="weeklyPulseBars" class="weekly-pulse-bars" role="list"></div>
             </article>
 
-            <div class="weekly-side">
-              <article class="metric-card card">
-                <p class="metric-title">Putki</p>
-                <p id="streakValue" class="metric-value">0</p>
-                <p id="streakLabel" class="metric-subtext">päivää</p>
-              </article>
-              <article class="metric-card card">
-                <p class="metric-title">Viikon paras</p>
-                <p id="weekBestValue" class="metric-value">0</p>
-                <p id="weekBestLabel" class="metric-subtext">max / pv</p>
-              </article>
-            </div>
+            <article id="weeklyBookersCard" class="weekly-bookers card" aria-label="Viikon kärki">
+              <header class="weekly-bookers-header">
+                <div class="weekly-pulse-title">
+                  <span class="weekly-pulse-dot" aria-hidden="true"></span>
+                  <span class="weekly-pulse-label">Viikon kärki</span>
+                </div>
+                <div id="weeklyBookersTotal" class="weekly-bookers-total">
+                  <span class="weekly-bookers-count-label">0 VARAUSTA</span>
+                </div>
+              </header>
+              <div class="weekly-bookers-body">
+                <div class="weekly-bookers-chart-wrap">
+                  <svg id="weeklyBookersDonut" class="weekly-bookers-donut" viewBox="0 0 200 200" role="img" aria-label="Varausjakauma bookkaajittain"></svg>
+                  <div class="weekly-bookers-center">
+                    <span id="weeklyBookersWeekLabel" class="weekly-bookers-week" aria-hidden="true">👑</span>
+                    <div id="weeklyBookersTopName" class="weekly-bookers-top">—</div>
+                    <span id="weeklyBookersTopValue" class="weekly-bookers-top-value">0 VARAUSTA</span>
+                  </div>
+                </div>
+                <ul id="weeklyBookersLegend" class="weekly-bookers-legend" role="list"></ul>
+              </div>
+            </article>
           </section>
 
           <section class="controls" aria-label="Haku">
@@ -265,39 +256,11 @@
             <div id="futureHomeVisitsList" class="home-visit-list"></div>
           </section>
 
-          <section class="home-visit-section today-section">
+          <div class="page-divider" aria-hidden="true"></div>
+
+          <section class="home-visit-section">
             <h3>Tänään</h3>
             <div id="todayHomeVisitsList" class="home-visit-list"></div>
-          </section>
-
-          <section class="daily-bookings-wrap card home-page-daily-strip">
-            <div class="daily-bookings-head">
-              <div class="daily-bookings-head-main">
-                <h2 class="daily-bookings-title">Varaukset</h2>
-              </div>
-              <div class="daily-bookings-view-toggle" role="tablist" aria-label="Aikaväli">
-                <button
-                  type="button"
-                  class="daily-view-tab home-page-dw-tab active"
-                  data-home-page-dw="day"
-                  role="tab"
-                  aria-selected="true"
-                >
-                  Päivä
-                </button>
-                <button
-                  type="button"
-                  class="daily-view-tab home-page-dw-tab"
-                  data-home-page-dw="week"
-                  role="tab"
-                  aria-selected="false"
-                >
-                  Viikko
-                </button>
-              </div>
-            </div>
-            <p id="homeVisitsPageRangeContext" class="daily-bookings-context"></p>
-            <div id="homeVisitsPageDailyList" class="daily-bookings-list"></div>
           </section>
         </section>
 
@@ -369,6 +332,10 @@
                   </select>
                 </div>
               </div>
+              <label class="booking-field booking-field--full">
+                Lisätiedot
+                <textarea id="bookingDetails" rows="4"></textarea>
+              </label>
             </div>
             <div class="home-actions booking-form-actions">
               <button id="deleteBookingButton" type="button" class="danger-button hidden">
@@ -386,6 +353,8 @@
               autocomplete="off"
             />
           </section>
+
+          <div class="page-divider" aria-hidden="true"></div>
 
           <section class="table-wrap">
             <table>

@@ -1,9 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 
 const API_URL =
-  "https://script.googleusercontent.com/macros/echo?user_content_key=AWDtjMXci3_5NkPy0FS_ddSHbzMfeKYyNEXAnA107MsKtOgkoFYt6sLwndImsrlpSIwstTsMfrIrjS7yc2OadtiuyCfIDMzbjaPvMv6Gc-H9n5smZeN0itJyD7X9PW4WkmqzTkz4DD7Yo_al2QJ3EwZ9X17lmYHDZnTmJioPlK0wo4-UnVnW15zBXIK7ubNmNNbJeV1jB3HiPMWH9dUbyLfCSnGEH1Zr5JfBUjUfjCxFBkSfrcgP-LSldLFKHiCCMBIqnqUhuGK5iNpDaHC1fzXhnCREj4ila6IOw5KBDpRt&lib=MfFvjvB14MTaUuGb9I0ppQ7vDcWBALqSa";
+  "https://script.google.com/macros/s/AKfycbzQ82vjhyLdRBmgNwujIteR-XYttANTIbSgNIuHRafg5tf5AmOhn-S_OqYLJc_p6Ant/exec";
 
-const BOOKERS_API_URL = API_URL.includes("?") ? `${API_URL}&mode=bookers` : `${API_URL}?mode=bookers`;
+const BOOKERS_API_URL = API_URL.includes("?") ? `${API_URL}&mode=bookers_ghl` : `${API_URL}?mode=bookers_ghl`;
 
 /** API:n testivaraukset (isTest) piilotetaan listasta */
 const HIDE_TEST_API_BOOKINGS = true;
@@ -13,7 +13,7 @@ const HIDE_TEST_API_BOOKINGS = true;
  * ("Vielä X varausta…"), viikkotavoite ma–to, Putki ja Viikon paras.
  * Aseta `true` näyttääksesi ne uudelleen.
  */
-const DASHBOARD_SHOW_WEEK_GOALS_AND_CHART_CAPTION = false;
+const DASHBOARD_SHOW_WEEK_GOALS_AND_CHART_CAPTION = true;
 
 /** false = piilottaa manuaalisen päivitysnapin (tausta päivittää automaattisesti). */
 const SHOW_MANUAL_REFRESH_BUTTON = false;
@@ -21,14 +21,19 @@ const SHOW_MANUAL_REFRESH_BUTTON = false;
 /** false = piilottaa kalenterinäkymän ja sen linkin sivupalkista. */
 const SHOW_CALENDAR_NAV_AND_VIEW = false;
 
+/** false = piilottaa toimipiste (yksityisarviointi) -osion päänäkymästä. */
+const SHOW_OFFICE_VISITS_SECTION = false;
+
 const REFRESH_MS = 60000;
-const DASHBOARD_PIN = "3105Ranta!4601";
+const PIN_VERIFY_FUNCTION_NAME = "verify-pin";
 const PIN_SESSION_KEY = "dashboardPinUnlocked";
 const TODAY_TARGET = 12;
-const WEEKDAY_TARGET = 12;
-const WEEK_TARGET_HEADROOM = 1.35;
 const CHART_START_HOUR = 7;
 const CHART_END_HOUR = 23;
+/** Viikon varauspalkit: lineaarinen korkeus per varaus (ei suhteuteta viikon maksimiin). */
+const WEEKLY_PULSE_BASE_HEIGHT_PCT = 5;
+const WEEKLY_PULSE_HEIGHT_PER_BOOKING_PCT = 6;
+const WEEKLY_PULSE_MAX_HEIGHT_PCT = 92;
 const HOME_VISITS_STORAGE_KEY = "localHomeVisits";
 const BOOKINGS_STORAGE_KEY = "localBookings";
 const BOOKING_OWNER_PROFILES_STORAGE_KEY = "localBookingOwnerProfiles";
@@ -84,9 +89,6 @@ const saveHomeVisitButton = document.getElementById("saveHomeVisitButton");
 const todayHomeVisitsList = document.getElementById("todayHomeVisitsList");
 const pastHomeVisitsList = document.getElementById("pastHomeVisitsList");
 const futureHomeVisitsList = document.getElementById("futureHomeVisitsList");
-const homeVisitsPageDailyList = document.getElementById("homeVisitsPageDailyList");
-const homeVisitsPageRangeContext = document.getElementById("homeVisitsPageRangeContext");
-const homeVisitsPageDayWeekTabs = document.querySelectorAll(".home-page-dw-tab[data-home-page-dw]");
 const toggleBookingFormButton = document.getElementById("toggleBookingFormButton");
 const bookingForm = document.getElementById("bookingForm");
 const bookingCustomerName = document.getElementById("bookingCustomerName");
@@ -99,6 +101,7 @@ const bookingOwner = document.getElementById("bookingOwner");
 const addBookingOwnerProfileButton = document.getElementById("addBookingOwnerProfileButton");
 const deleteBookingOwnerProfileButton = document.getElementById("deleteBookingOwnerProfileButton");
 const bookingStatus = document.getElementById("bookingStatus");
+const bookingDetails = document.getElementById("bookingDetails");
 const deleteBookingButton = document.getElementById("deleteBookingButton");
 const saveBookingButton = document.getElementById("saveBookingButton");
 const bookingSearchInput = document.getElementById("bookingSearchInput");
@@ -113,23 +116,42 @@ const chartTargetLine = document.getElementById("chartTargetLine");
 const chartTargetLabel = document.getElementById("chartTargetLabel");
 const chartXAxisLabels = document.getElementById("chartXAxisLabels");
 const chartYAxisLabels = document.getElementById("chartYAxisLabels");
-const streakValue = document.getElementById("streakValue");
-const streakLabel = document.getElementById("streakLabel");
-const weekBestValue = document.getElementById("weekBestValue");
-const weekBestLabel = document.getElementById("weekBestLabel");
-const weekTotalText = document.getElementById("weekTotalText");
-const weekProgressText = document.getElementById("weekProgressText");
-const weekMonVal = document.getElementById("weekMonVal");
-const weekTueVal = document.getElementById("weekTueVal");
-const weekWedVal = document.getElementById("weekWedVal");
-const weekThuVal = document.getElementById("weekThuVal");
-const weekMonBar = document.getElementById("weekMonBar");
-const weekTueBar = document.getElementById("weekTueBar");
-const weekWedBar = document.getElementById("weekWedBar");
-const weekThuBar = document.getElementById("weekThuBar");
-const weeklyWrapCard = document.getElementById("weeklyWrapCard");
-const weekTargetLine = document.getElementById("weekTargetLine");
+const weeklyPulseBars = document.getElementById("weeklyPulseBars");
+const weeklyPulseValue = document.getElementById("weeklyPulseValue");
 const dashboardWeekMetricsSection = document.getElementById("dashboardWeekMetricsSection");
+const weeklyBookersDonut = document.getElementById("weeklyBookersDonut");
+const weeklyBookersLegend = document.getElementById("weeklyBookersLegend");
+const weeklyBookersWeekLabel = document.getElementById("weeklyBookersWeekLabel");
+const weeklyBookersTopName = document.getElementById("weeklyBookersTopName");
+const weeklyBookersTopValue = document.getElementById("weeklyBookersTopValue");
+const weeklyBookersTotal = document.getElementById("weeklyBookersTotal");
+
+const WEEKLY_PULSE_DAY_LABELS = ["MA", "TI", "KE", "TO", "PE", "LA", "SU"];
+let weeklyPulseTodayCount = 0;
+
+/** 20 hyvin erottuvaa, kerma-/kultateemaan sopivaa väriä bookkaajien donut-paloille */
+const BOOKER_COLOR_PALETTE = [
+  "#b88b3d",
+  "#1e9d78",
+  "#c66a3c",
+  "#6e7fc9",
+  "#b34f7a",
+  "#5fa6a1",
+  "#d4a82e",
+  "#8e5cb4",
+  "#d65c5c",
+  "#3e8c4a",
+  "#4b6a93",
+  "#9d6b3f",
+  "#6da8d1",
+  "#b78ec4",
+  "#5b8a3a",
+  "#cc5f95",
+  "#2b8b8b",
+  "#d68a51",
+  "#7567a3",
+  "#c5993f",
+];
 
 function applyDashboardOptionalBlocksVisibility() {
   const show = DASHBOARD_SHOW_WEEK_GOALS_AND_CHART_CAPTION;
@@ -177,6 +199,7 @@ let supabaseClient = null;
 let notesByEventKey = new Map();
 let noteCountsByEventKey = new Map();
 let appStarted = false;
+let apiCapacityPerEvent = 32;
 let homeVisits = [];
 let editingHomeVisitId = null;
 let activeView = "dashboard";
@@ -193,7 +216,10 @@ let focusedEventKeyForDaily = null;
 let dailyBookingsViewMode = "day";
 /** Päänäkymän varauslista: API-tapahtumavaraukset tai kotikäynnit */
 let dailyBookingsSourceMode = "bookings";
-let homeVisitsPageListMode = "day";
+/** Toimipiste-lohkon tarkka aikataulu auki */
+let officeVisitsExpanded = false;
+
+const OFFICE_VISITS_COMPACT_MAX = 4;
 
 function isSupabaseConfigured() {
   return Boolean(supabaseUrl && supabaseAnonKey);
@@ -247,6 +273,245 @@ function eventKey(event) {
   return `${event.location}_${event.startDate}`;
 }
 
+const OFFICE_VISIT_LABEL = "Toimipiste";
+
+function getOfficeEventHaystack(event) {
+  return `${event?.title ?? ""} ${event?.location ?? ""}`.toLowerCase();
+}
+
+function getBookingClassificationHaystack(norm, event) {
+  return `${getOfficeEventHaystack(event)} ${norm?.orderName ?? ""} ${norm?.service ?? ""}`.toLowerCase();
+}
+
+function isTestCalendarEvent(event) {
+  return getOfficeEventHaystack(event).includes("testi kalenteri");
+}
+
+/** Oma toimipiste: kultamyynti.fi yksityisarviointi -varaukset */
+function isOfficePrivateEvaluationEvent(event) {
+  if (isTestCalendarEvent(event)) return false;
+  const hay = getOfficeEventHaystack(event);
+  return (
+    hay.includes("yksityisarviointi") ||
+    hay.includes("kultamyynti.fi") ||
+    (hay.includes("kultamyynti") && (hay.includes("yksityis") || hay.includes("arviointi")))
+  );
+}
+
+function isOfficePrivateEvaluationBooking(norm, event) {
+  if (isTestCalendarEvent(event)) return false;
+  if (isOfficePrivateEvaluationEvent(event)) return true;
+  const hay = getBookingClassificationHaystack(norm, event);
+  return (
+    hay.includes("yksityisarviointi") ||
+    hay.includes("kultamyynti.fi") ||
+    (hay.includes("kultamyynti") && (hay.includes("yksityis") || hay.includes("arviointi")))
+  );
+}
+
+function shouldHideEventFromBookingsViews(event) {
+  return isTestCalendarEvent(event) || isOfficePrivateEvaluationEvent(event);
+}
+
+function mapApiBookingRow(raw, event) {
+  const norm = normalizeApiBookingRow(raw);
+  if (HIDE_TEST_API_BOOKINGS && norm.isTest) return null;
+  const sourceStart = norm.startDate || norm.bookingDate;
+  let instant = parseApiBookingInstant(sourceStart, event.startDate);
+  if (Number.isNaN(instant.getTime())) return null;
+  instant = alignBookingInstantToEventDay(instant, event.startDate);
+  const createdAt = parseApiBookingInstant(norm.bookingDate, event.startDate);
+  return {
+    kind: "booking",
+    norm,
+    event,
+    instant,
+    createdAt: Number.isNaN(createdAt.getTime()) ? null : createdAt,
+  };
+}
+
+function sortBookingRows(a, b) {
+  const dt = a.instant.getTime() - b.instant.getTime();
+  if (dt !== 0) return dt;
+  const aCreated = a.createdAt ? a.createdAt.getTime() : 0;
+  const bCreated = b.createdAt ? b.createdAt.getTime() : 0;
+  if (aCreated !== bCreated) return aCreated - bCreated;
+  const aAppointmentId = String(a.norm?.appointmentId ?? "").trim();
+  const bAppointmentId = String(b.norm?.appointmentId ?? "").trim();
+  if (aAppointmentId && bAppointmentId && aAppointmentId !== bAppointmentId) {
+    return aAppointmentId.localeCompare(bAppointmentId);
+  }
+  const aEventStart = a.event ? new Date(a.event.startDate).getTime() : 0;
+  const bEventStart = b.event ? new Date(b.event.startDate).getTime() : 0;
+  return aEventStart - bEventStart;
+}
+
+function formatWeekdayShort(dateValue) {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("fi-FI", { weekday: "short" }).format(date);
+}
+
+function getOfficeBookingEndInstant(row) {
+  const norm = row.norm;
+  const event = row.event;
+  if (!norm?.endDate) return null;
+  let end = parseApiBookingInstant(norm.endDate, event.startDate);
+  if (Number.isNaN(end.getTime())) return null;
+  end = alignBookingInstantToEventDay(end, event.startDate);
+  if (end <= row.instant) return null;
+  return end;
+}
+
+function formatOfficeVisitCompactWhen(instant) {
+  const weekday = formatWeekdayShort(instant);
+  const date = formatDateOnly(instant);
+  const time = formatBookingTimeFi(instant);
+  return `${weekday} ${date} · ${time}`;
+}
+
+function formatOfficeVisitDetailWhen(row) {
+  const start = row.instant;
+  const end = getOfficeBookingEndInstant(row);
+  const weekday = formatWeekdayShort(start);
+  const date = formatDateOnly(start);
+  const startTime = formatBookingTimeFi(start);
+  const endTime = end ? formatBookingTimeFi(end) : "";
+  const range = endTime ? `${startTime}–${endTime}` : startTime;
+  return `${weekday} ${date} klo ${range}`;
+}
+
+function renderOfficeVisitsBlock(rows, isWeek) {
+  if (!rows.length) return "";
+  const sorted = [...rows].sort(sortBookingRows);
+  const expanded = officeVisitsExpanded;
+  const now = Date.now();
+  const nextUpcoming = sorted.find((row) => row.instant.getTime() >= now - 5 * 60 * 1000);
+  const nextLine = nextUpcoming
+    ? `<p class="office-visits-next"><span class="office-visits-next-label">Seuraava</span> ${escapeHtml(
+        formatOfficeVisitCompactWhen(nextUpcoming.instant)
+      )}${nextUpcoming.norm?.name ? ` · ${escapeHtml(String(nextUpcoming.norm.name).trim())}` : ""}</p>`
+    : "";
+
+  const compactItems = sorted
+    .slice(0, OFFICE_VISITS_COMPACT_MAX)
+    .map((row) => {
+      const name = String(row.norm?.name || "—").trim() || "—";
+      return `<li class="office-visits-item"><span class="office-visits-when">${escapeHtml(
+        formatOfficeVisitCompactWhen(row.instant)
+      )}</span><span class="office-visits-name">${escapeHtml(name)}</span></li>`;
+    })
+    .join("");
+
+  const detailItems = sorted
+    .map((row) => {
+      const name = String(row.norm?.name || "—").trim() || "—";
+      const phone = String(row.norm?.phone || "").trim();
+      const phoneHtml = phone
+        ? `<p class="office-visits-detail-phone">Puh. ${escapeHtml(phone)}</p>`
+        : "";
+      return `<li class="office-visits-detail-item">
+          <p class="office-visits-detail-when">${escapeHtml(formatOfficeVisitDetailWhen(row))}</p>
+          <p class="office-visits-detail-name">${escapeHtml(name)}</p>
+          ${phoneHtml}
+        </li>`;
+    })
+    .join("");
+
+  const hiddenCount = sorted.length - OFFICE_VISITS_COMPACT_MAX;
+  const moreHint =
+    !expanded && hiddenCount > 0
+      ? `<p class="office-visits-more">+ ${hiddenCount} muuta varausta</p>`
+      : "";
+
+  const toggleLabel = expanded ? "Piilota ajat" : "Näytä kaikki ajat";
+
+  return `
+    <div id="officeVisitsBlock" class="office-visits-block${expanded ? " is-expanded" : ""}">
+      <div class="office-visits-head">
+        <div class="office-visits-head-text">
+          <span class="office-visits-label">${OFFICE_VISIT_LABEL}</span>
+          <span class="office-visits-meta">${isWeek ? "Yksityisarviointi" : "Yksityisarviointi · seuraavat 7 pv"}</span>
+        </div>
+        <div class="office-visits-head-actions">
+          <span class="office-visits-count">${sorted.length} kpl</span>
+          <button
+            type="button"
+            class="office-visits-toggle"
+            data-office-visits-toggle
+            aria-expanded="${expanded ? "true" : "false"}"
+          >${toggleLabel}</button>
+        </div>
+      </div>
+      ${nextLine}
+      <ul class="office-visits-list office-visits-list--compact" aria-label="${OFFICE_VISIT_LABEL}">${compactItems}</ul>
+      <ul class="office-visits-list office-visits-list--detail" aria-label="${OFFICE_VISIT_LABEL}, tarkat ajat">${detailItems}</ul>
+      ${moreHint}
+    </div>`;
+}
+
+function collectOfficeBookingRows(focusEvent, isWeek, query) {
+  const { rangeStart, rangeEnd } = getOfficeBookingsRange(focusEvent.startDate, isWeek);
+  const officeRows = [];
+  const seenAppointmentIds = new Set();
+
+  for (const ev of allEvents) {
+    if (isTestCalendarEvent(ev)) continue;
+    const evText = `${ev.title ?? ""} ${ev.location} ${formatDateOnly(ev.startDate)}`
+      .toLowerCase()
+      .trim();
+
+    for (const raw of getApiBookingsFromEvent(ev)) {
+      if (!isApiBookingRealOccupancy(raw)) continue;
+      const norm = normalizeApiBookingRow(raw);
+      if (!isOfficePrivateEvaluationBooking(norm, ev)) continue;
+
+      const mapped = mapApiBookingRow(raw, ev);
+      if (!mapped) continue;
+      if (mapped.instant < rangeStart || mapped.instant >= rangeEnd) continue;
+
+      const appointmentId = String(mapped.norm?.appointmentId ?? "").trim();
+      if (appointmentId) {
+        if (seenAppointmentIds.has(appointmentId)) continue;
+        seenAppointmentIds.add(appointmentId);
+      }
+
+      const hay = `${mapped.norm.name} ${mapped.norm.phone} ${mapped.norm.orderName} ${mapped.norm.service} ${evText}`
+        .toLowerCase()
+        .trim();
+      if (query && !hay.includes(query)) continue;
+
+      officeRows.push(mapped);
+    }
+  }
+
+  officeRows.sort(sortBookingRows);
+  return officeRows;
+}
+
+function renderOfficeVisitsEmpty(isWeek, focusEvent) {
+  const focusDay = startOfDay(new Date(focusEvent.startDate));
+  const rangeStart = isWeek
+    ? new Date(
+        focusDay.getFullYear(),
+        focusDay.getMonth(),
+        focusDay.getDate() - ((focusDay.getDay() + 6) % 7)
+      )
+    : focusDay;
+  const period = `${formatDateOnly(rangeStart)}${isWeek ? " · viikko" : ""}`;
+  return `
+    <div id="officeVisitsBlock" class="office-visits-block office-visits-block--empty">
+      <div class="office-visits-head">
+        <div class="office-visits-head-text">
+          <span class="office-visits-label">${OFFICE_VISIT_LABEL}</span>
+          <span class="office-visits-meta">Yksityisarviointi</span>
+        </div>
+        <span class="office-visits-count">0 kpl</span>
+      </div>
+      <p class="office-visits-empty">Ei varauksia (${escapeHtml(period)}).</p>
+    </div>`;
+}
+
 /** Sama paikka voi toistua useana tapahtumana — erottele päivä ja kello */
 function formatEventDayAndTime(startDateRaw) {
   const d = new Date(startDateRaw ?? "");
@@ -268,6 +533,7 @@ function escapeHtml(text) {
 function getFilteredDashboardEvents() {
   const query = searchInput.value.trim().toLowerCase();
   return allEvents.filter((event) => {
+    if (isTestCalendarEvent(event)) return false;
     const start = new Date(event.startDate ?? "");
     const dateKey = Number.isNaN(start.getTime()) ? "" : formatIsoDateKey(start);
     const text = `${event.title ?? ""} ${event.location} ${formatDateOnly(
@@ -313,7 +579,11 @@ function normalizeApiBookingRow(raw) {
     "";
   const bookingStartRaw = raw.startDate ?? raw.start_date ?? "";
   const bookingEndRaw = raw.endDate ?? raw.end_date ?? "";
+  const appointmentId = String(raw.appointmentId ?? raw.appointment_id ?? "").trim();
+  const contactId = String(raw.contactId ?? raw.contact_id ?? "").trim();
   return {
+    appointmentId,
+    contactId,
     bookingDate: bookingDateRaw,
     startDate: bookingStartRaw,
     endDate: bookingEndRaw,
@@ -334,6 +604,11 @@ function normalizeApiBookingRow(raw) {
         ""
     ).trim(),
   };
+}
+
+function parseFiniteNonNegativeNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 /** Varattavuusruudukko: oikea varaus, ei dummy/testi/peruttu */
@@ -470,6 +745,44 @@ function formatBookingTimeFi(instant) {
   }).format(instant);
 }
 
+/** Päänäkymän kotikäyntirivi: asiakas/sijainti details-kentästä, varaaja erikseen. */
+function getDailyHomeVisitDisplay(visit) {
+  const booker = String(visit.nickname || "").trim();
+  const details = String(visit.details || "").trim();
+  const detailLines = details
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const addr = String(visit.address || "").trim();
+  const locationFromAddr = addr && addr !== "-" ? addr : "";
+  const storedCustomer = String(visit.customer_name || "").trim();
+
+  let customer = "";
+  let location = locationFromAddr;
+
+  if (storedCustomer && storedCustomer !== booker) {
+    customer = storedCustomer;
+    if (!location && detailLines.length > 0) {
+      location = detailLines.join(" · ");
+    }
+  } else if (detailLines.length >= 2) {
+    customer = detailLines[0];
+    location = location || detailLines.slice(1).join(" · ");
+  } else if (detailLines.length === 1) {
+    customer = detailLines[0];
+  } else if (storedCustomer) {
+    customer = storedCustomer;
+  } else {
+    customer = "Kotikäynti";
+  }
+
+  return {
+    booker,
+    customer,
+    location,
+  };
+}
+
 function getIsoWeekDateKeys(anchorDate) {
   const d = new Date(anchorDate);
   const mondayOffset = (d.getDay() + 6) % 7;
@@ -494,6 +807,15 @@ function getDayOrWeekRangeAroundAnchor(anchorDate, isWeek) {
     : focusDay;
   const rangeEnd = new Date(rangeStart);
   rangeEnd.setDate(rangeStart.getDate() + (isWeek ? 7 : 1));
+  return { rangeStart, rangeEnd };
+}
+
+/** Toimipiste: päivänäkymässä näytetään valitusta päivästä eteenpäin 7 pv (ei vain yksi päivä). */
+function getOfficeBookingsRange(anchorDate, isWeek) {
+  if (isWeek) return getDayOrWeekRangeAroundAnchor(anchorDate, true);
+  const rangeStart = startOfDay(new Date(anchorDate));
+  const rangeEnd = new Date(rangeStart);
+  rangeEnd.setDate(rangeEnd.getDate() + 7);
   return { rangeStart, rangeEnd };
 }
 
@@ -568,6 +890,7 @@ function renderDailyEventSwitch(focusEvent, events, isWeek) {
   const focusKey = formatIsoDateKey(startOfDay(focusDate));
   const dayEvents = events
     .filter((ev) => {
+      if (shouldHideEventFromBookingsViews(ev)) return false;
       const d = new Date(ev.startDate ?? "");
       if (Number.isNaN(d.getTime())) return false;
       return formatIsoDateKey(startOfDay(d)) === focusKey;
@@ -642,10 +965,29 @@ function renderDailyBookings() {
       !focusedEventKeyForDaily ||
       !filtered.some((e) => eventKey(e) === focusedEventKeyForDaily)
     ) {
-      focusedEventKeyForDaily = eventKey(filtered[0]);
+      const preferredFocus =
+        filtered.find((event) => !shouldHideEventFromBookingsViews(event)) ?? filtered[0];
+      focusedEventKeyForDaily = eventKey(preferredFocus);
     }
     focusEvent =
       filtered.find((e) => eventKey(e) === focusedEventKeyForDaily) ?? filtered[0];
+    if (
+      dailyBookingsSourceMode === "bookings" &&
+      !isWeek &&
+      shouldHideEventFromBookingsViews(focusEvent)
+    ) {
+      const focusDayKey = formatIsoDateKey(startOfDay(new Date(focusEvent.startDate)));
+      const fieldOnDay = filtered.find((ev) => {
+        if (shouldHideEventFromBookingsViews(ev)) return false;
+        const d = new Date(ev.startDate ?? "");
+        if (Number.isNaN(d.getTime())) return false;
+        return formatIsoDateKey(startOfDay(d)) === focusDayKey;
+      });
+      if (fieldOnDay) {
+        focusedEventKeyForDaily = eventKey(fieldOnDay);
+        focusEvent = fieldOnDay;
+      }
+    }
     if (dailyBookingsSourceMode === "bookings") {
       renderDailyEventSwitch(focusEvent, filtered, isWeek);
     } else if (dailyEventSwitch) {
@@ -661,6 +1003,7 @@ function renderDailyBookings() {
       const weekKeys = getIsoWeekDateKeys(new Date(focusEvent.startDate));
       for (const ev of allEvents) {
         if (!weekKeys.includes(formatIsoDateKey(new Date(ev.startDate)))) continue;
+        if (shouldHideEventFromBookingsViews(ev)) continue;
         const wkStart = new Date(ev.startDate ?? "");
         const wkKey = Number.isNaN(wkStart.getTime()) ? "" : formatIsoDateKey(wkStart);
         const text = `${ev.title ?? ""} ${ev.location} ${formatDateOnly(ev.startDate)} ${wkKey}`
@@ -668,26 +1011,16 @@ function renderDailyBookings() {
           .trim();
         if (query && !text.includes(query)) continue;
         for (const raw of getApiBookingsFromEvent(ev)) {
-          rows.push({ raw, event: ev });
+          const mapped = mapApiBookingRow(raw, ev);
+          if (mapped) rows.push(mapped);
         }
       }
-    } else {
+    } else if (!shouldHideEventFromBookingsViews(focusEvent)) {
       for (const raw of getApiBookingsFromEvent(focusEvent)) {
-        rows.push({ raw, event: focusEvent });
+        const mapped = mapApiBookingRow(raw, focusEvent);
+        if (mapped) rows.push(mapped);
       }
     }
-
-    rows = rows
-      .map(({ raw, event }) => {
-        const norm = normalizeApiBookingRow(raw);
-        if (HIDE_TEST_API_BOOKINGS && norm.isTest) return null;
-        const sourceStart = norm.startDate || norm.bookingDate;
-        let instant = parseApiBookingInstant(sourceStart, event.startDate);
-        if (Number.isNaN(instant.getTime())) return null;
-        instant = alignBookingInstantToEventDay(instant, event.startDate);
-        return { kind: "booking", norm, event, instant };
-      })
-      .filter(Boolean);
   }
 
   const focusDay = startOfDay(new Date(focusEvent.startDate));
@@ -719,7 +1052,7 @@ function renderDailyBookings() {
       }));
     if (query) {
       rows = rows.filter(({ visit }) => {
-        const hay = `${visit.customer_name ?? ""} ${visit.nickname ?? ""} ${visit.details ?? ""}`
+        const hay = `${visit.customer_name ?? ""} ${visit.nickname ?? ""} ${visit.details ?? ""} ${visit.address ?? ""}`
           .toLowerCase()
           .trim();
         return hay.includes(query);
@@ -727,13 +1060,7 @@ function renderDailyBookings() {
     }
   }
 
-  rows.sort((a, b) => {
-    const dt = a.instant.getTime() - b.instant.getTime();
-    if (dt !== 0) return dt;
-    const aEventStart = a.event ? new Date(a.event.startDate).getTime() : 0;
-    const bEventStart = b.event ? new Date(b.event.startDate).getTime() : 0;
-    return aEventStart - bEventStart;
-  });
+  rows.sort(sortBookingRows);
 
   if (dailyBookingsContext) {
     if (dailyBookingsSourceMode === "homeVisits") {
@@ -757,14 +1084,24 @@ function renderDailyBookings() {
       if (row.kind === "home") {
         const visit = row.visit;
         const timeStr = formatBookingTimeFi(row.instant);
-        const customer = String(visit.customer_name || visit.nickname || "Kotikäynti").trim();
-        const extra = isWeek ? `${formatDateOnly(row.instant)} · Kotikäynti` : "Kotikäynti";
+        const { booker, customer, location } = getDailyHomeVisitDisplay(visit);
+        const weekDate = isWeek
+          ? `<p class="daily-booking-home-date">${escapeHtml(formatDateOnly(row.instant))}</p>`
+          : "";
+        const locationHtml = location
+          ? `<p class="daily-booking-home-location">${escapeHtml(location)}</p>`
+          : "";
+        const bookerHtml = booker
+          ? `<p class="daily-booking-home-booker">${escapeHtml(booker)}</p>`
+          : "";
         return `
         <div class="daily-booking-row daily-booking-row--home">
-          <div class="daily-booking-time">${escapeHtml(timeStr)}</div>
-          <div class="daily-booking-main">
-            <p class="daily-booking-name">${escapeHtml(customer)}</p>
-            <p class="daily-booking-sub">${escapeHtml(extra)}</p>
+          <div class="daily-booking-time daily-booking-time--home">${escapeHtml(timeStr)}</div>
+          <div class="daily-booking-main daily-booking-main--home">
+            ${weekDate}
+            <p class="daily-booking-name daily-booking-name--home">${escapeHtml(customer)}</p>
+            ${locationHtml}
+            ${bookerHtml}
           </div>
         </div>`;
       }
@@ -866,14 +1203,27 @@ function getManualActiveEventBookingCountByKey(bookingsList = bookings) {
 function getDashboardEventMetrics(event, manualCountMap = null) {
   const manualMap = manualCountMap ?? getManualActiveEventBookingCountByKey();
   const manualCount = manualMap.get(eventKey(event)) ?? 0;
-  const apiBookedReal = Number(event.bookedReal) || 0;
-  const apiBookedTotal = Number(event.bookedTotal) || 0;
-  const bookedFake = Number(event.bookedFake) || 0;
-  const apiRemainingReal = Number(event.remainingReal) || 0;
-  const target = Math.max(apiBookedReal + apiRemainingReal, 1);
-  const bookedReal = apiBookedReal;
-  const bookedTotal = apiBookedTotal;
-  const remainingReal = apiRemainingReal;
+  const activeBookings = getApiBookingsFromEvent(event).filter(
+    (raw) => !isCancelledApiBookingStatus(raw?.status)
+  );
+  const fallbackBookedReal = activeBookings.reduce(
+    (sum, raw) => sum + (isApiBookingRealOccupancy(raw) ? 1 : 0),
+    0
+  );
+  const fallbackBookedTotal = activeBookings.length;
+  const fallbackBookedFake = Math.max(fallbackBookedTotal - fallbackBookedReal, 0);
+
+  const apiBookedReal = parseFiniteNonNegativeNumber(event.bookedReal);
+  const apiBookedTotal = parseFiniteNonNegativeNumber(event.bookedTotal);
+  const apiBookedFake = parseFiniteNonNegativeNumber(event.bookedFake);
+  const apiRemainingReal = parseFiniteNonNegativeNumber(event.remainingReal);
+  const perEventCapacity = parseFiniteNonNegativeNumber(event.capacityPerEvent) ?? apiCapacityPerEvent;
+
+  const bookedReal = apiBookedReal ?? fallbackBookedReal;
+  const bookedTotal = apiBookedTotal ?? fallbackBookedTotal;
+  const bookedFake = apiBookedFake ?? Math.max(bookedTotal - bookedReal, fallbackBookedFake, 0);
+  const remainingReal = apiRemainingReal ?? Math.max(perEventCapacity - bookedReal, 0);
+  const target = Math.max(bookedReal + remainingReal, 1);
   return {
     bookedReal,
     bookedTotal,
@@ -1407,7 +1757,7 @@ function renderBookings() {
     .filter(isEventBooking)
     .filter((entry) => {
       const haystack =
-        `${entry.customer_name} ${entry.phone ?? ""} ${entry.email ?? ""} ${entry.booking_type ?? ""} ${entry.owner ?? ""} ${entry.event_name ?? ""}`.toLowerCase();
+        `${entry.customer_name} ${entry.phone ?? ""} ${entry.email ?? ""} ${entry.booking_type ?? ""} ${entry.owner ?? ""} ${entry.event_name ?? ""} ${entry.details ?? ""}`.toLowerCase();
       return haystack.includes(query);
     })
     .sort((a, b) => {
@@ -1429,9 +1779,16 @@ function renderBookings() {
       const locationLabel = getEventLocationLabel(entry);
       const eventMeta = `${formatDateOnly(entry.booking_date)} klo ${entry.booking_time || "--:--"}`;
       const createdAtLabel = entry.created_at ? formatDateTime(entry.created_at) : "-";
+      const detailsText = String(entry.details ?? "").trim();
+      const detailsHtml = detailsText
+        ? `<p class="home-visit-note booking-list-details">${escapeHtml(detailsText)}</p>`
+        : "";
       return `
         <tr>
-          <td>${escapeHtml(entry.customer_name)}</td>
+          <td>
+            <div class="event-cell-main">${escapeHtml(entry.customer_name)}</div>
+            ${detailsHtml}
+          </td>
           <td>
             <div class="event-cell-main">${escapeHtml(locationLabel)}</div>
             <div class="event-cell-meta">${escapeHtml(eventMeta)}</div>
@@ -1477,7 +1834,7 @@ async function loadBookings() {
   const { data, error } = await client
     .from("bookings")
     .select(
-      "id, customer_name, phone, email, booking_type, booking_date, booking_time, event_key, event_name, status, owner, created_at"
+      "id, customer_name, phone, email, booking_type, booking_date, booking_time, event_key, event_name, status, owner, details, created_at"
     )
     .order("booking_date", { ascending: true })
     .order("booking_time", { ascending: true });
@@ -1587,6 +1944,7 @@ function startBookingEdit(entry) {
   updateBookingEventOptions(entry.event_key || "", entry.booking_time || "");
   renderBookingOwnerOptions(entry.owner || "");
   if (bookingStatus) bookingStatus.value = entry.status || "odottaa";
+  if (bookingDetails) bookingDetails.value = entry.details || "";
   if (saveBookingButton) saveBookingButton.textContent = "Tallenna muutokset";
   if (toggleBookingFormButton) toggleBookingFormButton.textContent = "Peruuta muokkaus";
   if (deleteBookingButton) deleteBookingButton.classList.remove("hidden");
@@ -1809,70 +2167,6 @@ function renderHomeVisitItems(items, container) {
   });
 }
 
-function syncHomeVisitsPageDayWeekTabsUi() {
-  if (!homeVisitsPageDayWeekTabs || homeVisitsPageDayWeekTabs.length === 0) return;
-  homeVisitsPageDayWeekTabs.forEach((tab) => {
-    const mode = tab.dataset.homePageDw === "week" ? "week" : "day";
-    const active = mode === homeVisitsPageListMode;
-    tab.classList.toggle("active", active);
-    tab.setAttribute("aria-selected", active ? "true" : "false");
-  });
-}
-
-function renderHomeVisitsPageDailyList() {
-  syncHomeVisitsPageDayWeekTabsUi();
-  if (!homeVisitsPageDailyList) return;
-  const anchor = new Date();
-  const isWeek = homeVisitsPageListMode === "week";
-  const { rangeStart, rangeEnd } = getDayOrWeekRangeAroundAnchor(anchor, isWeek);
-
-  let rows = homeVisits
-    .filter((visit) => {
-      const status = String(visit.status || "").toLowerCase();
-      if (status !== "sovittu" && status !== "valmis") return false;
-      const ts = visit.visit_time ?? visit.visit_date;
-      if (!ts) return false;
-      const visitTime = new Date(ts);
-      if (Number.isNaN(visitTime.getTime())) return false;
-      return visitTime >= rangeStart && visitTime < rangeEnd;
-    })
-    .map((visit) => ({
-      kind: "home",
-      visit,
-      instant: new Date(visit.visit_time ?? visit.visit_date),
-    }));
-
-  rows.sort((a, b) => a.instant.getTime() - b.instant.getTime());
-
-  if (homeVisitsPageRangeContext) {
-    homeVisitsPageRangeContext.textContent = `${formatDateOnly(rangeStart)}${isWeek ? " · viikko" : ""}`;
-  }
-
-  if (rows.length === 0) {
-    homeVisitsPageDailyList.innerHTML = `<div class="empty-daily-bookings">Ei kotikäyntejä.</div>`;
-    return;
-  }
-
-  const html = rows
-    .map((row) => {
-      const visit = row.visit;
-      const timeStr = formatBookingTimeFi(row.instant);
-      const customer = String(visit.customer_name || visit.nickname || "Kotikäynti").trim();
-      const extra = isWeek ? `${formatDateOnly(row.instant)} · Kotikäynti` : "Kotikäynti";
-      return `
-        <div class="daily-booking-row daily-booking-row--home">
-          <div class="daily-booking-time">${escapeHtml(timeStr)}</div>
-          <div class="daily-booking-main">
-            <p class="daily-booking-name">${escapeHtml(customer)}</p>
-            <p class="daily-booking-sub">${escapeHtml(extra)}</p>
-          </div>
-        </div>`;
-    })
-    .join("");
-
-  homeVisitsPageDailyList.innerHTML = html;
-}
-
 function renderHomeVisits() {
   const now = new Date();
   const today = startOfDay(now);
@@ -1891,7 +2185,6 @@ function renderHomeVisits() {
   renderHomeVisitItems(futureItems, futureHomeVisitsList);
   renderHomeVisitItems(todayItems, todayHomeVisitsList);
   renderHomeVisitItems(pastItems, pastHomeVisitsList);
-  renderHomeVisitsPageDailyList();
 }
 
 function isCancelledApiBookingStatus(statusRaw) {
@@ -2036,6 +2329,284 @@ function drawTodayChart(hourlyCounts, target, yAxisMax) {
   chartYAxisLabels.innerHTML = yLabels.join("");
 }
 
+function weeklyPulseBarHeightPct(count) {
+  const height =
+    WEEKLY_PULSE_BASE_HEIGHT_PCT + count * WEEKLY_PULSE_HEIGHT_PER_BOOKING_PCT;
+  return Math.min(height, WEEKLY_PULSE_MAX_HEIGHT_PCT);
+}
+
+function renderWeeklyPulse(counts, todayIdx) {
+  if (!weeklyPulseBars || !weeklyPulseValue) return;
+
+  weeklyPulseBars.innerHTML = counts
+    .map((count, idx) => {
+      const heightPct = weeklyPulseBarHeightPct(count);
+      const isToday = idx === todayIdx;
+      return `
+        <div class="weekly-pulse-col${isToday ? " is-today" : ""}" role="listitem" data-count="${count}">
+          <div class="weekly-pulse-tooltip">${count} kpl</div>
+          <div class="weekly-pulse-bar" style="height: ${heightPct.toFixed(2)}%"></div>
+          <span class="weekly-pulse-day">${WEEKLY_PULSE_DAY_LABELS[idx]}</span>
+        </div>
+      `;
+    })
+    .join("");
+
+  weeklyPulseValue.textContent = String(weeklyPulseTodayCount);
+}
+
+if (weeklyPulseBars && weeklyPulseValue) {
+  weeklyPulseBars.addEventListener("mouseover", (event) => {
+    const col = event.target.closest(".weekly-pulse-col");
+    if (!col || !weeklyPulseBars.contains(col)) return;
+    const value = Number(col.getAttribute("data-count")) || 0;
+    weeklyPulseValue.textContent = String(value);
+  });
+  weeklyPulseBars.addEventListener("mouseleave", () => {
+    weeklyPulseValue.textContent = String(weeklyPulseTodayCount);
+  });
+}
+
+function getIsoWeekNumber(date) {
+  const target = new Date(date.valueOf());
+  const dayNr = (date.getDay() + 6) % 7;
+  target.setDate(target.getDate() - dayNr + 3);
+  const firstThursday = target.valueOf();
+  target.setMonth(0, 1);
+  if (target.getDay() !== 4) {
+    target.setMonth(0, 1 + ((4 - target.getDay() + 7) % 7));
+  }
+  return 1 + Math.ceil((firstThursday - target) / (7 * 24 * 3600 * 1000));
+}
+
+function getBookerColor(name, index) {
+  if (index < BOOKER_COLOR_PALETTE.length) return BOOKER_COLOR_PALETTE[index];
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1) {
+    hash = (hash * 31 + name.charCodeAt(i)) | 0;
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 55%, 48%)`;
+}
+
+function getWeeklyBookerEntries(bookingsList = bookings) {
+  const eventEntries = bookingsList.filter(isActiveEventBooking).map((entry) => ({
+    owner: entry.owner,
+    created_at: entry.created_at,
+  }));
+  const homeEntries = homeVisits
+    .filter((visit) => {
+      const status = String(visit.status || "").toLowerCase();
+      return status === "sovittu" || status === "valmis";
+    })
+    .map((visit) => ({
+      owner: visit.nickname || "",
+      created_at: visit.created_at || visit.visit_time,
+    }));
+  return [...eventEntries, ...homeEntries];
+}
+
+function aggregateBookingsByOwner(activeBookings, weekStart, weekEnd) {
+  const map = new Map();
+  activeBookings.forEach((entry) => {
+    const createdAt = new Date(entry.created_at);
+    if (Number.isNaN(createdAt.getTime())) return;
+    if (createdAt < weekStart || createdAt >= weekEnd) return;
+    const rawOwner = normalizeOwnerName(entry.owner);
+    const name = rawOwner || "Ei tekijää";
+    map.set(name, (map.get(name) ?? 0) + 1);
+  });
+  return [...map.entries()]
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name, "fi"));
+}
+
+let weeklyBookersActiveLabel = null;
+let weeklyBookersSegments = [];
+
+function formatWeeklyBookerCountLabel(count) {
+  const n = Math.round(Number(count));
+  if (!Number.isFinite(n) || n <= 0) return "0 VARAUSTA";
+  if (n === 1) return "1 VARAUS";
+  return `${n} VARAUSTA`;
+}
+
+function getFirstPlaceBookers(segments) {
+  if (!segments.length) return [];
+  const topValue = segments[0].value;
+  return segments.filter((seg) => seg.value === topValue).map((seg) => seg.name);
+}
+
+function renderWeeklyTopNamesHtml(names) {
+  if (!names.length) {
+    return '<span class="weekly-bookers-top-name">—</span>';
+  }
+  return names
+    .map((name) => `<span class="weekly-bookers-top-name">${escapeHtml(name)}</span>`)
+    .join("");
+}
+
+function setWeeklyBookersCenterDisplay(names, count) {
+  if (weeklyBookersTopName) {
+    weeklyBookersTopName.innerHTML = renderWeeklyTopNamesHtml(names);
+  }
+  if (weeklyBookersTopValue) {
+    weeklyBookersTopValue.textContent =
+      count === "—" ? "—" : formatWeeklyBookerCountLabel(count);
+  }
+}
+
+function renderWeeklyBookers(activeBookings, weekStart, weekEnd) {
+  if (!weeklyBookersDonut || !weeklyBookersLegend) return;
+
+  weeklyBookersSegments = aggregateBookingsByOwner(activeBookings, weekStart, weekEnd).map(
+    (entry, idx) => ({
+      ...entry,
+      color: getBookerColor(entry.name, idx),
+      label: entry.name,
+    })
+  );
+  const segments = weeklyBookersSegments;
+  const totalValue = segments.reduce((sum, seg) => sum + seg.value, 0);
+
+  if (weeklyBookersWeekLabel) {
+    weeklyBookersWeekLabel.textContent = "👑";
+  }
+
+  if (weeklyBookersTotal) {
+    weeklyBookersTotal.innerHTML = `<span class="weekly-bookers-count-label">${formatWeeklyBookerCountLabel(
+      totalValue
+    )}</span>`;
+  }
+
+  const radius = 80;
+  const cx = 100;
+  const cy = 100;
+  const strokeWidth = 22;
+  const circumference = 2 * Math.PI * radius;
+
+  if (totalValue === 0 || segments.length === 0) {
+    weeklyBookersDonut.innerHTML = `
+      <circle class="donut-track" cx="${cx}" cy="${cy}" r="${radius}" stroke-width="${strokeWidth}"></circle>
+    `;
+    setWeeklyBookersCenterDisplay(["Ei varauksia"], "—");
+    weeklyBookersLegend.innerHTML =
+      '<li class="weekly-bookers-empty">Tällä viikolla ei vielä varauksia.</li>';
+    weeklyBookersActiveLabel = null;
+    return;
+  }
+
+  let cumulative = 0;
+  const arcs = segments
+    .map((seg) => {
+      const pct = seg.value / totalValue;
+      const dash = pct * circumference;
+      const offset = -cumulative * circumference;
+      cumulative += pct;
+      return `
+        <circle
+          class="donut-segment"
+          data-label="${escapeAttr(seg.label)}"
+          cx="${cx}"
+          cy="${cy}"
+          r="${radius}"
+          stroke="${seg.color}"
+          stroke-width="${strokeWidth}"
+          stroke-dasharray="${dash.toFixed(2)} ${circumference.toFixed(2)}"
+          stroke-dashoffset="${offset.toFixed(2)}"
+          style="color: ${seg.color}; transform: rotate(-90deg); transform-origin: ${cx}px ${cy}px;"
+        ></circle>
+      `;
+    })
+    .join("");
+
+  weeklyBookersDonut.innerHTML = `
+    <circle class="donut-track" cx="${cx}" cy="${cy}" r="${radius}" stroke-width="${strokeWidth}"></circle>
+    ${arcs}
+  `;
+
+  const top = segments[0];
+  setWeeklyBookersCenterDisplay(getFirstPlaceBookers(segments), top.value);
+
+  weeklyBookersLegend.innerHTML = segments
+    .map((seg) => {
+      const pct = totalValue === 0 ? 0 : Math.round((seg.value / totalValue) * 100);
+      return `
+        <li class="weekly-bookers-legend-item" data-label="${escapeAttr(seg.label)}">
+          <span class="weekly-bookers-legend-dot" style="background:${seg.color};"></span>
+          <span class="weekly-bookers-legend-name" title="${escapeAttr(seg.name)}">${escapeHtml(seg.name)}</span>
+          <span class="weekly-bookers-legend-count">${seg.value} · ${pct}%</span>
+        </li>
+      `;
+    })
+    .join("");
+
+  setWeeklyBookersActive(weeklyBookersActiveLabel);
+}
+
+function setWeeklyBookersActive(label) {
+  const segments = weeklyBookersSegments;
+  const top = segments[0] ?? null;
+  const segs = weeklyBookersDonut?.querySelectorAll(".donut-segment") ?? [];
+  const legendItems = weeklyBookersLegend?.querySelectorAll(".weekly-bookers-legend-item") ?? [];
+  const exists =
+    !label || segments.some((seg) => seg.label === label);
+  const effective = exists ? label : null;
+  weeklyBookersActiveLabel = effective;
+
+  segs.forEach((el) => {
+    const isMatch = effective && el.getAttribute("data-label") === effective;
+    el.classList.toggle("is-active", Boolean(isMatch));
+    el.classList.toggle("is-dimmed", Boolean(effective) && !isMatch);
+  });
+  legendItems.forEach((el) => {
+    const isMatch = effective && el.getAttribute("data-label") === effective;
+    el.classList.toggle("is-active", Boolean(isMatch));
+  });
+
+  if (top) {
+    const showSeg = effective
+      ? segments.find((seg) => seg.label === effective)
+      : null;
+    if (showSeg) {
+      setWeeklyBookersCenterDisplay([showSeg.name], showSeg.value);
+    } else {
+      setWeeklyBookersCenterDisplay(getFirstPlaceBookers(segments), top.value);
+    }
+  }
+}
+
+function escapeAttr(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+if (weeklyBookersDonut) {
+  weeklyBookersDonut.addEventListener("mouseover", (event) => {
+    const seg = event.target.closest(".donut-segment");
+    if (!seg) return;
+    setWeeklyBookersActive(seg.getAttribute("data-label"));
+  });
+  weeklyBookersDonut.addEventListener("mouseleave", () => {
+    setWeeklyBookersActive(null);
+  });
+}
+
+if (weeklyBookersLegend) {
+  weeklyBookersLegend.addEventListener("mouseover", (event) => {
+    const item = event.target.closest(".weekly-bookers-legend-item");
+    if (!item) return;
+    setWeeklyBookersActive(item.getAttribute("data-label"));
+  });
+  weeklyBookersLegend.addEventListener("mouseleave", () => {
+    setWeeklyBookersActive(null);
+  });
+}
+
 function renderOverviewStats(bookingsList = bookings) {
   if (!todayBookedValue || !todayTargetValue || !chartCaption) return;
   const now = new Date();
@@ -2097,75 +2668,24 @@ function renderOverviewStats(bookingsList = bookings) {
   const dayCountMap = getCreatedDayCountMap(
     manualEntries.map((entry) => ({ created_at: entry.created_at }))
   );
-  if (streakValue && streakLabel) {
-    const streak = getCurrentStreak(dayCountMap);
-    streakValue.textContent = String(streak);
-    streakLabel.textContent = streak === 1 ? "päivä" : "päivää";
-  }
-
-  if (
-    !weekTotalText ||
-    !weekProgressText ||
-    !weekMonVal ||
-    !weekTueVal ||
-    !weekWedVal ||
-    !weekThuVal ||
-    !weekMonBar ||
-    !weekTueBar ||
-    !weekWedBar ||
-    !weekThuBar
-  ) {
-    return;
-  }
 
   const monday = startOfDay(now);
   const dayOfWeek = monday.getDay();
   const shift = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
   monday.setDate(monday.getDate() - shift);
-  const dates = Array.from({ length: 4 }, (_, idx) => {
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 7);
+  const weekDates = Array.from({ length: 7 }, (_, idx) => {
     const day = new Date(monday);
     day.setDate(monday.getDate() + idx);
     return day;
   });
-  const counts = dates.map((date) => dayCountMap.get(formatIsoDateKey(date)) ?? 0);
-  const weekTotal = counts.reduce((acc, value) => acc + value, 0);
-  const weekTarget = WEEKDAY_TARGET * 4;
-  weekTotalText.textContent = `${weekTotal} / ${weekTarget}`;
-  weekProgressText.textContent =
-    weekTotal >= weekTarget ? `+${weekTotal - weekTarget}` : `${weekTarget - weekTotal} vajaa`;
-  weekMonVal.textContent = String(counts[0]);
-  weekTueVal.textContent = String(counts[1]);
-  weekWedVal.textContent = String(counts[2]);
-  weekThuVal.textContent = String(counts[3]);
+  const weekCounts = weekDates.map((date) => dayCountMap.get(formatIsoDateKey(date)) ?? 0);
+  const todayIdx = shift;
+  weeklyPulseTodayCount = weekCounts[todayIdx] ?? 0;
 
-  const chartMax = Math.max(...counts, Math.ceil(WEEKDAY_TARGET * WEEK_TARGET_HEADROOM), 1);
-  const heights = counts.map((count) => {
-    if (count <= 0) return "0%";
-    const pct = (count / chartMax) * 100;
-    return `max(6px, ${pct.toFixed(2)}%)`;
-  });
-  weekMonBar.style.height = heights[0];
-  weekTueBar.style.height = heights[1];
-  weekWedBar.style.height = heights[2];
-  weekThuBar.style.height = heights[3];
-  [weekMonBar, weekTueBar, weekWedBar, weekThuBar].forEach((bar, idx) => {
-    bar.classList.remove("is-low", "is-warn", "is-good");
-    bar.classList.add(getBookingColorClass(counts[idx]));
-  });
-
-  const targetPct = Math.min((WEEKDAY_TARGET / chartMax) * 100, 100);
-  if (weekTargetLine) {
-    weekTargetLine.style.top = `${100 - targetPct}%`;
-  }
-  if (weeklyWrapCard) {
-    weeklyWrapCard.style.setProperty("--week-target-pct", String(100 - targetPct));
-  }
-
-  if (weekBestValue && weekBestLabel) {
-    const best = Math.max(...counts, 0);
-    weekBestValue.textContent = String(best);
-    weekBestLabel.textContent = "max / pv";
-  }
+  renderWeeklyPulse(weekCounts, todayIdx);
+  renderWeeklyBookers(getWeeklyBookerEntries(bookingsList), monday, sunday);
 }
 
 function groupNotesByEventKey(notes) {
@@ -2259,6 +2779,11 @@ function renderHistory() {
         entry.booking_time || "--:--"
       )} - ${getStatusLabel(entry.status)}
         </p>
+        ${
+          entry.details
+            ? `<p class="history-comment history-comment--details">${escapeHtml(entry.details)}</p>`
+            : ""
+        }
       </article>
     `;
     })
@@ -2460,11 +2985,25 @@ function renderTable() {
     !focusedEventKeyForDaily ||
     !filtered.some((e) => eventKey(e) === focusedEventKeyForDaily)
   ) {
-    focusedEventKeyForDaily = eventKey(filtered[0]);
+    const preferredFocus =
+      filtered.find((event) => !shouldHideEventFromBookingsViews(event)) ?? filtered[0];
+    focusedEventKeyForDaily = eventKey(preferredFocus);
   }
 
-  const visibleEvents = showAllEvents ? filtered : filtered.slice(0, 4);
-  const rows = visibleEvents
+  const fieldEvents = filtered.filter((event) => !shouldHideEventFromBookingsViews(event));
+  const visibleFieldEvents = showAllEvents ? fieldEvents : fieldEvents.slice(0, 4);
+  let officeSectionHtml = "";
+  if (SHOW_OFFICE_VISITS_SECTION) {
+    const focusEventForOffice =
+      filtered.find((event) => eventKey(event) === focusedEventKeyForDaily) ??
+      fieldEvents[0] ??
+      filtered[0];
+    const isWeek = dailyBookingsViewMode === "week";
+    const officeQuery = searchInput.value.trim().toLowerCase();
+    const officeRows = collectOfficeBookingRows(focusEventForOffice, isWeek, officeQuery);
+    officeSectionHtml = officeRows.length ? renderOfficeVisitsBlock(officeRows, isWeek) : "";
+  }
+  const rows = visibleFieldEvents
     .map((event, index) => {
       const { bookedReal, bookedTotal, bookedFake, remainingReal, target, manualCount } =
         getDashboardEventMetrics(event, manualCountMap);
@@ -2501,21 +3040,22 @@ function renderTable() {
     })
     .join("");
 
-  eventsBody.innerHTML = rows;
+  eventsBody.innerHTML = officeSectionHtml + rows;
   if (toggleEventsButton) {
-    if (filtered.length > 4) {
+    if (fieldEvents.length > 4) {
       toggleEventsButton.classList.remove("hidden");
-      toggleEventsButton.textContent = showAllEvents ? "Vain 4" : `Kaikki (${filtered.length})`;
+      toggleEventsButton.textContent = showAllEvents ? "Vain 4" : `Kaikki (${fieldEvents.length})`;
     } else {
       toggleEventsButton.classList.add("hidden");
     }
   }
-  statusText.textContent = `${visibleEvents.length} / ${filtered.length}`;
+  const visibleCount = visibleFieldEvents.length + (officeSectionHtml ? 1 : 0);
+  statusText.textContent = `${visibleCount} / ${filtered.length}`;
 
   eventsBody.querySelectorAll(".event-progress-item").forEach((item) => {
     item.addEventListener("click", () => {
       const index = Number(item.getAttribute("data-event-index"));
-      const event = visibleEvents[index];
+      const event = visibleFieldEvents[index];
       if (!event) return;
       focusedEventKeyForDaily = eventKey(event);
       openDrawer(event);
@@ -2544,6 +3084,7 @@ async function loadData() {
     }
 
     generatedAt = data.generatedAt ? new Date(data.generatedAt) : new Date();
+    apiCapacityPerEvent = parseFiniteNonNegativeNumber(data.capacityPerEvent) ?? apiCapacityPerEvent;
     allEvents = [...data.events].sort(
       (a, b) => new Date(a.startDate) - new Date(b.startDate)
     );
@@ -2583,7 +3124,7 @@ dailyViewTabs.forEach((tab) => {
   tab.addEventListener("click", () => {
     dailyBookingsViewMode = tab.dataset.dailyMode === "week" ? "week" : "day";
     syncDailyViewTabsUi();
-    renderDailyBookings();
+    renderTable();
   });
 });
 
@@ -2596,13 +3137,14 @@ dailySourceTabs.forEach((tab) => {
   });
 });
 
-homeVisitsPageDayWeekTabs.forEach((tab) => {
-  tab.addEventListener("click", () => {
-    homeVisitsPageListMode = tab.dataset.homePageDw === "week" ? "week" : "day";
-    syncHomeVisitsPageDayWeekTabsUi();
-    renderHomeVisitsPageDailyList();
+if (SHOW_OFFICE_VISITS_SECTION && eventsBody && !eventsBody.dataset.officeToggleBound) {
+  eventsBody.dataset.officeToggleBound = "1";
+  eventsBody.addEventListener("click", (event) => {
+    if (!event.target.closest("[data-office-visits-toggle]")) return;
+    officeVisitsExpanded = !officeVisitsExpanded;
+    renderTable();
   });
-});
+}
 
 if (toggleEventsButton) {
   toggleEventsButton.addEventListener("click", () => {
@@ -2845,6 +3387,7 @@ if (bookingForm) {
     const email = bookingEmail?.value.trim() ?? "";
     const status = bookingStatus?.value || "odottaa";
     const owner = bookingOwner?.value.trim() ?? "";
+    const details = bookingDetails?.value.trim() ?? "";
     const selectedKey = bookingEventSelect?.value ?? "";
     const eventOfDay = getEventsForDate(date).find((item) => eventKey(item) === selectedKey);
     const eventName = formatEventBookingName(eventOfDay);
@@ -2898,6 +3441,7 @@ if (bookingForm) {
       event_name: eventName || null,
       status,
       owner,
+      details: details || null,
     };
     if (email) {
       payload.email = email;
@@ -3018,36 +3562,102 @@ function startDashboard() {
   }, REFRESH_MS);
 }
 
-function tryUnlockWithPin() {
+let pinVerifyInFlight = false;
+
+async function verifyPinViaSupabase(pin) {
+  const client = getSupabase();
+  if (!client) {
+    console.warn("[verify-pin] Supabase client ei ole konfiguroitu (.env puuttuu?).");
+    return { ok: false, error: "supabase_not_configured" };
+  }
+  try {
+    const { data, error } = await client.functions.invoke(
+      PIN_VERIFY_FUNCTION_NAME,
+      { body: { pin } }
+    );
+    if (error) {
+      console.error("[verify-pin] Supabase invoke error:", error);
+      return { ok: false, error: error.message || "network_error" };
+    }
+    if (data && typeof data === "object") {
+      return {
+        ok: Boolean(data.ok),
+        error: typeof data.error === "string" ? data.error : null,
+      };
+    }
+    console.error("[verify-pin] Odottamaton vastaus:", data);
+    return { ok: false, error: "invalid_response" };
+  } catch (err) {
+    console.error("[verify-pin] Kutsu kaatui:", err);
+    return { ok: false, error: err?.message || "network_error" };
+  }
+}
+
+async function tryUnlockWithPin() {
   if (!pinInput || !pinError) return;
+  if (pinVerifyInFlight) return;
   const entered = pinInput.value.trim();
   if (!entered) {
     pinError.textContent = "Anna salasana.";
     pinError.classList.remove("hidden");
     return;
   }
-  if (entered === DASHBOARD_PIN) {
+
+  pinVerifyInFlight = true;
+  const originalSubmitLabel = pinSubmitButton?.textContent ?? "";
+  if (pinSubmitButton) {
+    pinSubmitButton.disabled = true;
+    pinSubmitButton.textContent = "Tarkistetaan…";
+  }
+  if (pinInput) pinInput.disabled = true;
+  pinError.classList.add("hidden");
+
+  const result = await verifyPinViaSupabase(entered);
+
+  pinVerifyInFlight = false;
+  if (pinSubmitButton) {
+    pinSubmitButton.disabled = false;
+    pinSubmitButton.textContent = originalSubmitLabel || "Sisään";
+  }
+  if (pinInput) pinInput.disabled = false;
+
+  if (result.ok) {
     pinError.classList.add("hidden");
     startDashboard();
-  } else {
-    pinError.textContent = "Väärin.";
-    pinError.classList.remove("hidden");
-    pinInput.value = "";
-    pinInput.focus();
+    return;
   }
+
+  let message = "Väärä salasana. Yritä uudelleen.";
+  if (result.error === "supabase_not_configured") {
+    message = "Salasanan tarkistus ei ole käytettävissä (Supabase puuttuu).";
+  } else if (result.error === "server_secret_missing") {
+    message = "Salasanaa ei ole määritetty palvelimella.";
+  } else if (result.error === "pin_required") {
+    message = "Anna salasana.";
+  } else if (
+    result.error === "network_error" ||
+    result.error === "invalid_response" ||
+    result.error === "invalid_json"
+  ) {
+    message = "Yhteysvirhe palvelimeen. Yritä uudelleen.";
+  }
+  pinError.textContent = message;
+  pinError.classList.remove("hidden");
+  pinInput.value = "";
+  pinInput.focus();
 }
 
 if (pinForm) {
   pinForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    tryUnlockWithPin();
+    void tryUnlockWithPin();
   });
 }
 
 if (pinSubmitButton) {
   pinSubmitButton.addEventListener("click", (event) => {
     event.preventDefault();
-    tryUnlockWithPin();
+    void tryUnlockWithPin();
   });
 }
 
@@ -3055,7 +3665,7 @@ if (pinInput) {
   pinInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      tryUnlockWithPin();
+      void tryUnlockWithPin();
     }
   });
 
