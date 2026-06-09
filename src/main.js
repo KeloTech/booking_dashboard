@@ -27,7 +27,9 @@ const SHOW_OFFICE_VISITS_SECTION = false;
 const REFRESH_MS = 60000;
 const PIN_VERIFY_FUNCTION_NAME = "verify-pin";
 const PIN_SESSION_KEY = "dashboardPinUnlocked";
-const TODAY_TARGET = 12;
+const TODAY_TARGET = 4;
+const CHART_Y_AXIS_LOW = 5;
+const CHART_Y_AXIS_HIGH = 10;
 const CHART_START_HOUR = 7;
 const CHART_END_HOUR = 23;
 /** Viikon varauspalkit: lineaarinen korkeus per varaus (ei suhteuteta viikon maksimiin). */
@@ -125,6 +127,12 @@ const weeklyBookersWeekLabel = document.getElementById("weeklyBookersWeekLabel")
 const weeklyBookersTopName = document.getElementById("weeklyBookersTopName");
 const weeklyBookersTopValue = document.getElementById("weeklyBookersTopValue");
 const weeklyBookersTotal = document.getElementById("weeklyBookersTotal");
+const weeklyProfitableDonut = document.getElementById("weeklyProfitableDonut");
+const weeklyProfitableLegend = document.getElementById("weeklyProfitableLegend");
+const weeklyProfitableWeekLabel = document.getElementById("weeklyProfitableWeekLabel");
+const weeklyProfitableTopName = document.getElementById("weeklyProfitableTopName");
+const weeklyProfitableTopValue = document.getElementById("weeklyProfitableTopValue");
+const weeklyProfitableTotal = document.getElementById("weeklyProfitableTotal");
 
 const WEEKLY_PULSE_DAY_LABELS = ["MA", "TI", "KE", "TO", "PE", "LA", "SU"];
 let weeklyPulseTodayCount = 0;
@@ -1767,7 +1775,7 @@ function renderBookings() {
     });
 
   if (filtered.length === 0) {
-    bookingsBody.innerHTML = '<tr><td colspan="8">Ei varauksia.</td></tr>';
+    bookingsBody.innerHTML = '<tr><td colspan="10">Ei varauksia.</td></tr>';
     return;
   }
 
@@ -1800,6 +1808,18 @@ function renderBookings() {
           <td><span class="name-chip ${ownerClass}" title="${escapeHtml(
         ownerText
       )}">${escapeHtml(ownerText)}</span></td>
+          <td>${renderLabeledTriStateField(
+            "Kannattavuus",
+            renderProfitableToggleHtml(entry.id, entry.profitable, "data-booking-profitable-id")
+          )}</td>
+          <td>${renderLabeledTriStateField(
+            "Asiakas saapui",
+            renderCustomerArrivedToggleHtml(
+              entry.id,
+              entry.customer_arrived,
+              "data-booking-arrived-id"
+            )
+          )}</td>
           <td><button type="button" class="table-edit-button" data-booking-edit-id="${entry.id}">Muokkaa</button></td>
         </tr>
       `;
@@ -1815,6 +1835,13 @@ function renderBookings() {
       startBookingEdit(entry);
     });
   });
+
+  bindProfitableToggleListeners(bookingsBody, "data-booking-profitable-id", updateBookingProfitable);
+  bindCustomerArrivedToggleListeners(
+    bookingsBody,
+    "data-booking-arrived-id",
+    updateBookingCustomerArrived
+  );
 }
 
 async function loadBookings() {
@@ -1834,7 +1861,7 @@ async function loadBookings() {
   const { data, error } = await client
     .from("bookings")
     .select(
-      "id, customer_name, phone, email, booking_type, booking_date, booking_time, event_key, event_name, status, owner, details, created_at"
+      "id, customer_name, phone, email, booking_type, booking_date, booking_time, event_key, event_name, status, owner, details, profitable, customer_arrived, created_at"
     )
     .order("booking_date", { ascending: true })
     .order("booking_time", { ascending: true });
@@ -1904,6 +1931,106 @@ async function updateBooking(id, entry) {
   return { ok: true };
 }
 
+function renderTriStateToggleHtml(id, value, idAttribute, valueAttribute, options = {}) {
+  const {
+    ariaLabel = "Valinta",
+    yesTitle = "Kyllä",
+    noTitle = "Ei",
+    neutralTitle = "Ei arvioitu",
+  } = options;
+  const neutralClass = value !== true && value !== false ? " is-active" : "";
+  const yesClass = value === true ? " is-active" : "";
+  const noClass = value === false ? " is-active" : "";
+  return `
+    <div class="tri-state-toggle" role="group" aria-label="${escapeAttr(ariaLabel)}">
+      <button type="button" class="tri-state-btn${neutralClass}" ${idAttribute}="${escapeAttr(id)}" ${valueAttribute}="" title="${escapeAttr(neutralTitle)}">—</button>
+      <button type="button" class="tri-state-btn tri-state-btn--yes${yesClass}" ${idAttribute}="${escapeAttr(id)}" ${valueAttribute}="true" title="${escapeAttr(yesTitle)}">✓</button>
+      <button type="button" class="tri-state-btn tri-state-btn--no${noClass}" ${idAttribute}="${escapeAttr(id)}" ${valueAttribute}="false" title="${escapeAttr(noTitle)}">✗</button>
+    </div>
+  `;
+}
+
+function renderLabeledTriStateField(label, toggleHtml) {
+  return `
+    <div class="tri-state-field">
+      <span class="tri-state-field-label">${escapeHtml(label)}</span>
+      ${toggleHtml}
+    </div>
+  `;
+}
+
+function renderProfitableToggleHtml(id, profitable, idAttribute) {
+  return renderTriStateToggleHtml(id, profitable, idAttribute, "data-profitable", {
+    ariaLabel: "Kannattavuus",
+    yesTitle: "Kannattava kauppa",
+    noTitle: "Ei kannattava",
+    neutralTitle: "Ei arvioitu",
+  });
+}
+
+function renderCustomerArrivedToggleHtml(id, customerArrived, idAttribute) {
+  return renderTriStateToggleHtml(id, customerArrived, idAttribute, "data-customer-arrived", {
+    ariaLabel: "Asiakas saapui",
+    yesTitle: "Asiakas saapui",
+    noTitle: "Asiakas ei saapunut",
+    neutralTitle: "Ei arvioitu",
+  });
+}
+
+function bindTriStateToggleListeners(container, idAttribute, valueAttribute, onUpdate, errorLabel) {
+  if (!container) return;
+  container.querySelectorAll(`[${idAttribute}]`).forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = button.getAttribute(idAttribute);
+      if (!id) return;
+      const value = button.getAttribute(valueAttribute);
+      const parsed = value === "" ? null : value === "true";
+      button.disabled = true;
+      const result = await onUpdate(id, parsed);
+      button.disabled = false;
+      if (!result.ok) {
+        alert(`${errorLabel} epäonnistui: ${result.message}`);
+      }
+    });
+  });
+}
+
+function bindProfitableToggleListeners(container, idAttribute, onUpdate) {
+  bindTriStateToggleListeners(
+    container,
+    idAttribute,
+    "data-profitable",
+    onUpdate,
+    "Kannattavuuden tallennus"
+  );
+}
+
+function bindCustomerArrivedToggleListeners(container, idAttribute, onUpdate) {
+  bindTriStateToggleListeners(
+    container,
+    idAttribute,
+    "data-customer-arrived",
+    onUpdate,
+    "Saapumisen tallennus"
+  );
+}
+
+async function updateBookingProfitable(id, profitable) {
+  return updateBooking(id, { profitable });
+}
+
+async function updateHomeVisitProfitable(id, profitable) {
+  return updateHomeVisit(id, { profitable });
+}
+
+async function updateBookingCustomerArrived(id, customerArrived) {
+  return updateBooking(id, { customer_arrived: customerArrived });
+}
+
+async function updateHomeVisitCustomerArrived(id, customerArrived) {
+  return updateHomeVisit(id, { customer_arrived: customerArrived });
+}
+
 async function deleteBooking(id) {
   const client = getSupabase();
   if (!client) {
@@ -1962,7 +2089,7 @@ async function loadHomeVisits() {
   }
   const { data, error } = await client
     .from("home_visits")
-    .select("id, customer_name, nickname, phone, address, visit_time, details, status, created_at")
+    .select("id, customer_name, nickname, phone, address, visit_time, details, status, profitable, customer_arrived, created_at")
     .order("visit_time", { ascending: true });
 
   if (error) {
@@ -2111,6 +2238,18 @@ function renderHomeVisitItems(items, container) {
               <p class="home-visit-note">${escapeHtml(item.details)}</p>
             </div>
             <div class="home-visit-actions">
+              ${renderLabeledTriStateField(
+                "Kannattavuus",
+                renderProfitableToggleHtml(item.id, item.profitable, "data-home-visit-profitable-id")
+              )}
+              ${renderLabeledTriStateField(
+                "Asiakas saapui",
+                renderCustomerArrivedToggleHtml(
+                  item.id,
+                  item.customer_arrived,
+                  "data-home-visit-arrived-id"
+                )
+              )}
               <button type="button" class="table-edit-button" data-home-visit-edit-id="${item.id}">
                 Muokkaa
               </button>
@@ -2165,6 +2304,13 @@ function renderHomeVisitItems(items, container) {
       }
     });
   });
+
+  bindProfitableToggleListeners(container, "data-home-visit-profitable-id", updateHomeVisitProfitable);
+  bindCustomerArrivedToggleListeners(
+    container,
+    "data-home-visit-arrived-id",
+    updateHomeVisitCustomerArrived
+  );
 }
 
 function renderHomeVisits() {
@@ -2321,7 +2467,8 @@ function drawTodayChart(hourlyCounts, target, yAxisMax) {
   chartXAxisLabels.innerHTML = xLabels.join("");
 
   const yLabels = [];
-  const yValues = yAxisMax <= 15 ? [0, 4, 8, 12, 15] : [0, 6, 12, 18, 24, 30];
+  const yValues =
+    yAxisMax <= CHART_Y_AXIS_LOW ? [0, 1, 2, 3, 4, 5] : [0, 2, 4, 6, 8, 10];
   yValues.forEach((value) => {
     const y = bottom - ((bottom - top) * value) / yAxisMax;
     yLabels.push(`<text x="${left - 6}" y="${(y + 3).toFixed(1)}">${value}</text>`);
@@ -2421,15 +2568,71 @@ function aggregateBookingsByOwner(activeBookings, weekStart, weekEnd) {
     .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name, "fi"));
 }
 
-let weeklyBookersActiveLabel = null;
-let weeklyBookersSegments = [];
-
 function formatWeeklyBookerCountLabel(count) {
   const n = Math.round(Number(count));
   if (!Number.isFinite(n) || n <= 0) return "0 VARAUSTA";
   if (n === 1) return "1 VARAUS";
   return `${n} VARAUSTA`;
 }
+
+function formatWeeklyProfitableCountLabel(count) {
+  const n = Math.round(Number(count));
+  if (!Number.isFinite(n) || n <= 0) return "0 KAUPPAA";
+  if (n === 1) return "1 KAUPPA";
+  return `${n} KAUPPAA`;
+}
+
+function getWeeklyProfitableEntries(bookingsList = bookings) {
+  const eventEntries = bookingsList
+    .filter(isActiveEventBooking)
+    .filter((entry) => entry.profitable === true)
+    .map((entry) => ({
+      owner: entry.owner,
+      created_at: entry.created_at,
+    }));
+  const homeEntries = homeVisits
+    .filter((visit) => visit.profitable === true)
+    .map((visit) => ({
+      owner: visit.nickname || "",
+      created_at: visit.created_at || visit.visit_time,
+    }));
+  return [...eventEntries, ...homeEntries];
+}
+
+function createWeeklyLeaderboardWidget(refs) {
+  return {
+    ...refs,
+    activeLabel: null,
+    segments: [],
+    formatCount: refs.formatCount ?? formatWeeklyBookerCountLabel,
+    emptyMessage: refs.emptyMessage ?? "Tällä viikolla ei vielä varauksia.",
+    emptyCenterNames: refs.emptyCenterNames ?? ["Ei varauksia"],
+  };
+}
+
+const weeklyBookersWidget = createWeeklyLeaderboardWidget({
+  donut: weeklyBookersDonut,
+  legend: weeklyBookersLegend,
+  weekLabel: weeklyBookersWeekLabel,
+  topName: weeklyBookersTopName,
+  topValue: weeklyBookersTopValue,
+  total: weeklyBookersTotal,
+  formatCount: formatWeeklyBookerCountLabel,
+  emptyMessage: "Tällä viikolla ei vielä varauksia.",
+  emptyCenterNames: ["Ei varauksia"],
+});
+
+const weeklyProfitableWidget = createWeeklyLeaderboardWidget({
+  donut: weeklyProfitableDonut,
+  legend: weeklyProfitableLegend,
+  weekLabel: weeklyProfitableWeekLabel,
+  topName: weeklyProfitableTopName,
+  topValue: weeklyProfitableTopValue,
+  total: weeklyProfitableTotal,
+  formatCount: formatWeeklyProfitableCountLabel,
+  emptyMessage: "Ei merkittyjä kannattavia kauppoja tällä viikolla.",
+  emptyCenterNames: ["Ei kauppoja"],
+});
 
 function getFirstPlaceBookers(segments) {
   if (!segments.length) return [];
@@ -2446,35 +2649,34 @@ function renderWeeklyTopNamesHtml(names) {
     .join("");
 }
 
-function setWeeklyBookersCenterDisplay(names, count) {
-  if (weeklyBookersTopName) {
-    weeklyBookersTopName.innerHTML = renderWeeklyTopNamesHtml(names);
+function setWeeklyLeaderboardCenterDisplay(widget, names, count) {
+  if (widget.topName) {
+    widget.topName.innerHTML = renderWeeklyTopNamesHtml(names);
   }
-  if (weeklyBookersTopValue) {
-    weeklyBookersTopValue.textContent =
-      count === "—" ? "—" : formatWeeklyBookerCountLabel(count);
+  if (widget.topValue) {
+    widget.topValue.textContent = count === "—" ? "—" : widget.formatCount(count);
   }
 }
 
-function renderWeeklyBookers(activeBookings, weekStart, weekEnd) {
-  if (!weeklyBookersDonut || !weeklyBookersLegend) return;
+function renderWeeklyLeaderboard(widget, activeBookings, weekStart, weekEnd) {
+  if (!widget.donut || !widget.legend) return;
 
-  weeklyBookersSegments = aggregateBookingsByOwner(activeBookings, weekStart, weekEnd).map(
+  widget.segments = aggregateBookingsByOwner(activeBookings, weekStart, weekEnd).map(
     (entry, idx) => ({
       ...entry,
       color: getBookerColor(entry.name, idx),
       label: entry.name,
     })
   );
-  const segments = weeklyBookersSegments;
+  const segments = widget.segments;
   const totalValue = segments.reduce((sum, seg) => sum + seg.value, 0);
 
-  if (weeklyBookersWeekLabel) {
-    weeklyBookersWeekLabel.textContent = "👑";
+  if (widget.weekLabel) {
+    widget.weekLabel.textContent = "👑";
   }
 
-  if (weeklyBookersTotal) {
-    weeklyBookersTotal.innerHTML = `<span class="weekly-bookers-count-label">${formatWeeklyBookerCountLabel(
+  if (widget.total) {
+    widget.total.innerHTML = `<span class="weekly-bookers-count-label">${widget.formatCount(
       totalValue
     )}</span>`;
   }
@@ -2486,13 +2688,12 @@ function renderWeeklyBookers(activeBookings, weekStart, weekEnd) {
   const circumference = 2 * Math.PI * radius;
 
   if (totalValue === 0 || segments.length === 0) {
-    weeklyBookersDonut.innerHTML = `
+    widget.donut.innerHTML = `
       <circle class="donut-track" cx="${cx}" cy="${cy}" r="${radius}" stroke-width="${strokeWidth}"></circle>
     `;
-    setWeeklyBookersCenterDisplay(["Ei varauksia"], "—");
-    weeklyBookersLegend.innerHTML =
-      '<li class="weekly-bookers-empty">Tällä viikolla ei vielä varauksia.</li>';
-    weeklyBookersActiveLabel = null;
+    setWeeklyLeaderboardCenterDisplay(widget, widget.emptyCenterNames, "—");
+    widget.legend.innerHTML = `<li class="weekly-bookers-empty">${widget.emptyMessage}</li>`;
+    widget.activeLabel = null;
     return;
   }
 
@@ -2520,15 +2721,15 @@ function renderWeeklyBookers(activeBookings, weekStart, weekEnd) {
     })
     .join("");
 
-  weeklyBookersDonut.innerHTML = `
+  widget.donut.innerHTML = `
     <circle class="donut-track" cx="${cx}" cy="${cy}" r="${radius}" stroke-width="${strokeWidth}"></circle>
     ${arcs}
   `;
 
   const top = segments[0];
-  setWeeklyBookersCenterDisplay(getFirstPlaceBookers(segments), top.value);
+  setWeeklyLeaderboardCenterDisplay(widget, getFirstPlaceBookers(segments), top.value);
 
-  weeklyBookersLegend.innerHTML = segments
+  widget.legend.innerHTML = segments
     .map((seg) => {
       const pct = totalValue === 0 ? 0 : Math.round((seg.value / totalValue) * 100);
       return `
@@ -2541,18 +2742,25 @@ function renderWeeklyBookers(activeBookings, weekStart, weekEnd) {
     })
     .join("");
 
-  setWeeklyBookersActive(weeklyBookersActiveLabel);
+  setWeeklyLeaderboardActive(widget, widget.activeLabel);
 }
 
-function setWeeklyBookersActive(label) {
-  const segments = weeklyBookersSegments;
+function renderWeeklyBookers(activeBookings, weekStart, weekEnd) {
+  renderWeeklyLeaderboard(weeklyBookersWidget, activeBookings, weekStart, weekEnd);
+}
+
+function renderWeeklyProfitableBookers(activeBookings, weekStart, weekEnd) {
+  renderWeeklyLeaderboard(weeklyProfitableWidget, activeBookings, weekStart, weekEnd);
+}
+
+function setWeeklyLeaderboardActive(widget, label) {
+  const segments = widget.segments;
   const top = segments[0] ?? null;
-  const segs = weeklyBookersDonut?.querySelectorAll(".donut-segment") ?? [];
-  const legendItems = weeklyBookersLegend?.querySelectorAll(".weekly-bookers-legend-item") ?? [];
-  const exists =
-    !label || segments.some((seg) => seg.label === label);
+  const segs = widget.donut?.querySelectorAll(".donut-segment") ?? [];
+  const legendItems = widget.legend?.querySelectorAll(".weekly-bookers-legend-item") ?? [];
+  const exists = !label || segments.some((seg) => seg.label === label);
   const effective = exists ? label : null;
-  weeklyBookersActiveLabel = effective;
+  widget.activeLabel = effective;
 
   segs.forEach((el) => {
     const isMatch = effective && el.getAttribute("data-label") === effective;
@@ -2565,13 +2773,11 @@ function setWeeklyBookersActive(label) {
   });
 
   if (top) {
-    const showSeg = effective
-      ? segments.find((seg) => seg.label === effective)
-      : null;
+    const showSeg = effective ? segments.find((seg) => seg.label === effective) : null;
     if (showSeg) {
-      setWeeklyBookersCenterDisplay([showSeg.name], showSeg.value);
+      setWeeklyLeaderboardCenterDisplay(widget, [showSeg.name], showSeg.value);
     } else {
-      setWeeklyBookersCenterDisplay(getFirstPlaceBookers(segments), top.value);
+      setWeeklyLeaderboardCenterDisplay(widget, getFirstPlaceBookers(segments), top.value);
     }
   }
 }
@@ -2585,27 +2791,32 @@ function escapeAttr(value) {
     .replace(/'/g, "&#39;");
 }
 
-if (weeklyBookersDonut) {
-  weeklyBookersDonut.addEventListener("mouseover", (event) => {
-    const seg = event.target.closest(".donut-segment");
-    if (!seg) return;
-    setWeeklyBookersActive(seg.getAttribute("data-label"));
-  });
-  weeklyBookersDonut.addEventListener("mouseleave", () => {
-    setWeeklyBookersActive(null);
-  });
+function bindWeeklyLeaderboardInteractions(widget) {
+  if (widget.donut) {
+    widget.donut.addEventListener("mouseover", (event) => {
+      const seg = event.target.closest(".donut-segment");
+      if (!seg) return;
+      setWeeklyLeaderboardActive(widget, seg.getAttribute("data-label"));
+    });
+    widget.donut.addEventListener("mouseleave", () => {
+      setWeeklyLeaderboardActive(widget, null);
+    });
+  }
+
+  if (widget.legend) {
+    widget.legend.addEventListener("mouseover", (event) => {
+      const item = event.target.closest(".weekly-bookers-legend-item");
+      if (!item) return;
+      setWeeklyLeaderboardActive(widget, item.getAttribute("data-label"));
+    });
+    widget.legend.addEventListener("mouseleave", () => {
+      setWeeklyLeaderboardActive(widget, null);
+    });
+  }
 }
 
-if (weeklyBookersLegend) {
-  weeklyBookersLegend.addEventListener("mouseover", (event) => {
-    const item = event.target.closest(".weekly-bookers-legend-item");
-    if (!item) return;
-    setWeeklyBookersActive(item.getAttribute("data-label"));
-  });
-  weeklyBookersLegend.addEventListener("mouseleave", () => {
-    setWeeklyBookersActive(null);
-  });
-}
+bindWeeklyLeaderboardInteractions(weeklyBookersWidget);
+bindWeeklyLeaderboardInteractions(weeklyProfitableWidget);
 
 function renderOverviewStats(bookingsList = bookings) {
   if (!todayBookedValue || !todayTargetValue || !chartCaption) return;
@@ -2662,7 +2873,7 @@ function renderOverviewStats(bookingsList = bookings) {
     sum += value;
     cumulative.push(sum);
   });
-  const yAxisMax = todayCount >= TODAY_TARGET ? 30 : 15;
+  const yAxisMax = todayCount >= TODAY_TARGET ? CHART_Y_AXIS_HIGH : CHART_Y_AXIS_LOW;
   drawTodayChart(cumulative, TODAY_TARGET, yAxisMax);
 
   const dayCountMap = getCreatedDayCountMap(
@@ -2686,6 +2897,7 @@ function renderOverviewStats(bookingsList = bookings) {
 
   renderWeeklyPulse(weekCounts, todayIdx);
   renderWeeklyBookers(getWeeklyBookerEntries(bookingsList), monday, sunday);
+  renderWeeklyProfitableBookers(getWeeklyProfitableEntries(bookingsList), monday, sunday);
 }
 
 function groupNotesByEventKey(notes) {
@@ -3023,9 +3235,9 @@ function renderTable() {
           </div>
           <p class="event-progress-value"><span>${bookedReal}</span> / ${target}</p>
         </div>
-        <div class="event-progress-bar" role="img" aria-label="${bookedReal} / ${target}, tavoiteviiva 12">
+        <div class="event-progress-bar" role="img" aria-label="${bookedReal} / ${target}, tavoiteviiva ${TODAY_TARGET}">
           <div class="event-progress-fill ${progressClass}" style="width: ${progressPct.toFixed(1)}%"></div>
-          <span class="event-progress-goal-marker" style="left: ${goalMarkPct.toFixed(2)}%;" title="12 / pv"></span>
+          <span class="event-progress-goal-marker" style="left: ${goalMarkPct.toFixed(2)}%;" title="${TODAY_TARGET} / pv"></span>
           <span class="event-progress-target">${target}</span>
         </div>
         <div class="event-progress-meta">

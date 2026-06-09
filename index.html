@@ -56,7 +56,7 @@
               <p class="overview-value">
                 <span id="todayBookedValue">0</span>
                 <span class="overview-divider">/</span>
-                <span id="todayTargetValue">12</span>
+                <span id="todayTargetValue">4</span>
               </p>
             </div>
             <svg id="bookingChart" class="booking-chart" viewBox="0 0 680 260" preserveAspectRatio="none">
@@ -114,6 +114,29 @@
                   </div>
                 </div>
                 <ul id="weeklyBookersLegend" class="weekly-bookers-legend" role="list"></ul>
+              </div>
+            </article>
+
+            <article id="weeklyProfitableCard" class="weekly-bookers card" aria-label="Kannattavat kaupat">
+              <header class="weekly-bookers-header">
+                <div class="weekly-pulse-title">
+                  <span class="weekly-pulse-dot" aria-hidden="true"></span>
+                  <span class="weekly-pulse-label">Kannattavat kaupat</span>
+                </div>
+                <div id="weeklyProfitableTotal" class="weekly-bookers-total">
+                  <span class="weekly-bookers-count-label">0 KAUPPAA</span>
+                </div>
+              </header>
+              <div class="weekly-bookers-body">
+                <div class="weekly-bookers-chart-wrap">
+                  <svg id="weeklyProfitableDonut" class="weekly-bookers-donut" viewBox="0 0 200 200" role="img" aria-label="Kannattavien kauppojen jakauma bookkaajittain"></svg>
+                  <div class="weekly-bookers-center">
+                    <span id="weeklyProfitableWeekLabel" class="weekly-bookers-week" aria-hidden="true">👑</span>
+                    <div id="weeklyProfitableTopName" class="weekly-bookers-top">—</div>
+                    <span id="weeklyProfitableTopValue" class="weekly-bookers-top-value">0 KAUPPAA</span>
+                  </div>
+                </div>
+                <ul id="weeklyProfitableLegend" class="weekly-bookers-legend" role="list"></ul>
               </div>
             </article>
           </section>
@@ -367,6 +390,8 @@
                   <th>Sähköposti</th>
                   <th>Tila</th>
                   <th>Nimi</th>
+                  <th>Kannattavuus</th>
+                  <th>Saapuminen</th>
                   <th>Muokkaa</th>
                 </tr>
               </thead>

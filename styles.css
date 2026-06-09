@@ -407,9 +407,14 @@ button:disabled:hover {
 .weekly-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  grid-template-rows: auto auto;
   gap: 0.8rem;
   margin-bottom: 0.8rem;
   align-items: stretch;
+}
+
+#weeklyWrapCard {
+  grid-row: 1 / -1;
 }
 
 .weekly-pulse {
@@ -2213,6 +2218,31 @@ tbody tr:hover {
   padding: 0.46rem 0.58rem;
 }
 
+.tri-state-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.28rem;
+  width: 140px;
+}
+
+.tri-state-field-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.home-visit-actions .tri-state-field {
+  width: 140px;
+}
+
+.home-visit-actions .tri-state-toggle {
+  width: 100%;
+  justify-content: center;
+}
+
 .home-visit-note {
   white-space: normal;
   overflow-wrap: anywhere;
@@ -2281,6 +2311,54 @@ tbody tr:hover {
 .booking-list-details {
   margin-top: 0.32rem;
   max-width: 22rem;
+}
+
+.tri-state-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem;
+  border-radius: 0.55rem;
+  border: 1px solid var(--line);
+  background: rgba(255, 252, 246, 0.9);
+}
+
+.tri-state-btn {
+  min-width: 1.65rem;
+  height: 1.65rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.tri-state-btn:hover {
+  background: rgba(143, 106, 47, 0.08);
+  color: var(--text);
+}
+
+.tri-state-btn.is-active {
+  border-color: rgba(143, 106, 47, 0.35);
+  background: rgba(143, 106, 47, 0.12);
+  color: var(--text);
+}
+
+.tri-state-btn--yes.is-active {
+  border-color: rgba(30, 157, 120, 0.45);
+  background: rgba(30, 157, 120, 0.14);
+  color: #1a7a5c;
+}
+
+.tri-state-btn--no.is-active {
+  border-color: rgba(198, 106, 60, 0.45);
+  background: rgba(198, 106, 60, 0.14);
+  color: #a84f2a;
 }
 
 .empty-notes {
