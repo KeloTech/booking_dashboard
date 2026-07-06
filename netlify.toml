@@ -1,3 +1,15 @@
 [build]
   command = "npm run build"
   publish = "dist"
+
+# --- Site unpublished ---------------------------------------------------------
+# This forced catch-all takes the site offline while keeping the project and all
+# code intact. Every route serves the "unavailable" placeholder with a 503
+# status. To republish the site, delete this redirect block (and optionally
+# public/unavailable.html) and redeploy.
+[[redirects]]
+  from = "/*"
+  to = "/unavailable.html"
+  status = 503
+  force = true
+# -----------------------------------------------------------------------------
